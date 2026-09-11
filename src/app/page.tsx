@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
 
 const QrScanner = dynamic(() => import("@/components/QrScanner"), {
   ssr: false,
@@ -111,6 +112,15 @@ export default function HomePage() {
   useEffect(() => {
     fetchMe().then(() => fetchMyEvents());
   }, [fetchMe, fetchMyEvents]);
+
+  useOnAuthLogout(() => {
+    setUser(null);
+    setMyEvents([]);
+    setTokenInput("");
+    setScanned(null);
+    setModalOpen(false);
+    router.push("/login");
+  });
 
   const getTimeNow = () =>
     new Date().toLocaleTimeString("sv-SE", {
@@ -238,6 +248,7 @@ export default function HomePage() {
               <button
                 onClick={async () => {
                   await fetch("/api/auth/logout", { method: "POST" });
+                  notifyAuthLogout();
                   router.push("/login");
                 }}
                 className="px-3 py-1.5 bg-red-500/80 hover:bg-red-600 rounded-lg text-xs font-medium text-white transition-colors"

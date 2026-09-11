@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
 
 const QrDisplay = dynamic(() => import("@/components/QrDisplay"), {
   ssr: false,
@@ -99,6 +100,14 @@ export default function DashboardPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roleDraft, setRoleDraft] = useState<Record<number, string>>({});
   const [roleSaving, setRoleSaving] = useState<number | null>(null);
+  const [resetTarget, setResetTarget] = useState<{
+    id: number;
+    name: string;
+    employee_id: string | null;
+  } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
 
   const fetchUser = useCallback(async () => {
     try {
@@ -172,8 +181,14 @@ export default function DashboardPage() {
     if (activeTab === "users") fetchUsers();
   }, [activeTab, fetchAsisten, fetchUsers]);
 
+  useOnAuthLogout(() => {
+    setUser(null);
+    router.push("/login");
+  });
+
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
+    notifyAuthLogout();
     router.push("/login");
   };
 
@@ -283,6 +298,32 @@ export default function DashboardPage() {
       /* noop */
     } finally {
       setRoleSaving(null);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+    setResetLoading(true);
+    setResetError("");
+    try {
+      const res = await fetch("/api/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: resetTarget.id,
+          new_password: newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResetTarget(null);
+      setNewPassword("");
+    } catch (err: unknown) {
+      setResetError(
+        err instanceof Error ? err.message : "Gagal mereset password"
+      );
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -904,6 +945,21 @@ export default function DashboardPage() {
                           >
                             {roleSaving === u.id ? "Menyimpan..." : "Simpan"}
                           </button>
+                          <button
+                            onClick={() => {
+                              setResetTarget({
+                                id: u.id,
+                                name: u.name,
+                                employee_id: u.employee_id,
+                              });
+                              setNewPassword("");
+                              setResetError("");
+                            }}
+                            className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium transition-colors"
+                            title="Reset password user"
+                          >
+                            Reset PW
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -914,6 +970,76 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-900">Reset Password</h3>
+              <button
+                onClick={() => setResetTarget(null)}
+                className="p-2 text-gray-400 hover:text-gray-600"
+                aria-label="Tutup"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div className="mb-4 bg-gray-50 rounded-xl p-3">
+              <p className="text-sm font-medium text-gray-900">
+                {resetTarget.name}
+              </p>
+              <p className="text-xs text-gray-400 font-mono">
+                {resetTarget.employee_id}
+              </p>
+            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Password Baru
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoFocus
+              placeholder="Minimal 6 karakter"
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
+            />
+            {resetError && (
+              <p className="text-sm text-red-600 mt-2">{resetError}</p>
+            )}
+            <p className="text-xs text-gray-400 mt-2">
+              User bisa login dengan password baru. Sesi aktif mereka tetap
+              berlaku otomatis.
+            </p>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={handleResetPassword}
+                disabled={newPassword.length < 6 || resetLoading}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+              >
+                {resetLoading ? "Merreset..." : "Reset Password"}
+              </button>
+              <button
+                onClick={() => setResetTarget(null)}
+                className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold transition-colors"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {qrEvent && qrEvent.token && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
