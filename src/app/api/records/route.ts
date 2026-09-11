@@ -25,8 +25,21 @@ export async function GET(req: Request) {
     const args: string[] = [];
 
     if (session.role !== "admin") {
-      args.push(String(session.userId));
-      query += ` AND e.user_id = $${args.length}`;
+      if (session.role === "asisten") {
+        args.push(String(session.userId));
+        query += ` AND (
+          e.user_id = $${args.length}
+          OR e.user_id IN (
+            SELECT pic_user_id FROM pic_assistants WHERE assistant_user_id = $${args.length}
+          )
+        )`;
+      } else if (session.role === "pic") {
+        args.push(String(session.userId));
+        query += ` AND e.user_id = $${args.length}`;
+      } else {
+        args.push(session.username);
+        query += ` AND a.employee_id = $${args.length}`;
+      }
     }
 
     if (event_id) {

@@ -7,7 +7,16 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "Belum login" }, { status: 401 });
   }
-  return NextResponse.json({ success: true, user: session });
+  await initDB();
+  const sql = getSql();
+  const user = await sql.query(
+    "SELECT id, username, employee_id, name, role FROM users WHERE id = $1",
+    [session.userId]
+  );
+  if (user.length === 0) {
+    return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
+  }
+  return NextResponse.json({ success: true, user: user[0] });
 }
 
 export async function POST() {
@@ -18,7 +27,7 @@ export async function POST() {
   const sql = getSql();
 
   const user = await sql.query(
-    "SELECT id, username, name, role FROM users WHERE id = $1",
+    "SELECT id, username, employee_id, name, role FROM users WHERE id = $1",
     [session.userId]
   );
   if (user.length === 0) {

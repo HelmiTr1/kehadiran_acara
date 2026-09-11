@@ -6,18 +6,18 @@ export async function POST(req: Request) {
   try {
     await initDB();
     const sql = getSql();
-    const { username, password } = await req.json();
+    const { identifier, password } = await req.json();
 
-    if (!username || !password) {
+    if (!identifier || !password) {
       return NextResponse.json(
-        { error: "Username dan password wajib diisi" },
+        { error: "ID Karyawan dan password wajib diisi" },
         { status: 400 }
       );
     }
 
     const result = await sql.query(
-      "SELECT id, username, password, name, role FROM users WHERE username = $1",
-      [username]
+      "SELECT id, username, employee_id, password, name, role FROM users WHERE username = $1 OR employee_id = $1",
+      [identifier]
     );
     if (result.length === 0) {
       return NextResponse.json(
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     const token = await createSessionToken({
       userId: Number(user.id),
-      username: user.username,
+      username: user.employee_id || user.username,
       name: user.name,
       role: user.role,
     });
@@ -47,6 +47,7 @@ export async function POST(req: Request) {
       message: "Login berhasil",
       name: user.name,
       role: user.role,
+      employee_id: user.employee_id || user.username,
     });
     response.cookies.set("session", token, {
       httpOnly: true,

@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     }
 
     const result = await sql.query(
-      `SELECT t.id AS token_id, t.event_id,
+      `SELECT t.id AS token_id, t.event_id, t.expires_at,
               e.name AS event_name, e.event_date, e.location
        FROM tokens t
        JOIN events e ON e.id = t.event_id
@@ -27,6 +27,15 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Token tidak valid" },
         { status: 404 }
+      );
+    }
+
+    const expiresAt = new Date(result[0].expires_at);
+    const now = new Date();
+    if (now > new Date(expiresAt.getTime() + 60000)) {
+      return NextResponse.json(
+        { error: "Token sudah kedaluwarsa, minta token baru ke PIC" },
+        { status: 401 }
       );
     }
 

@@ -14,15 +14,28 @@ export async function GET() {
   let rows;
   if (session.role === "admin") {
     rows = await sql.query(`
-      SELECT e.*, t.token, u.name AS pic_name
+      SELECT e.*, t.token, t.expires_at, u.name AS pic_name, u.employee_id AS pic_employee_id
       FROM events e
       LEFT JOIN tokens t ON t.event_id = e.id
       LEFT JOIN users u ON u.id = e.user_id
       ORDER BY e.created_at DESC
     `);
+  } else if (session.role === "asisten") {
+    rows = await sql.query(
+      `SELECT e.*, t.token, t.expires_at, u.name AS pic_name, u.employee_id AS pic_employee_id
+       FROM events e
+       LEFT JOIN tokens t ON t.event_id = e.id
+       LEFT JOIN users u ON u.id = e.user_id
+       WHERE e.user_id = $1
+          OR e.user_id IN (
+            SELECT pic_user_id FROM pic_assistants WHERE assistant_user_id = $1
+          )
+       ORDER BY e.created_at DESC`,
+      [session.userId]
+    );
   } else {
     rows = await sql.query(
-      `SELECT e.*, t.token, u.name AS pic_name
+      `SELECT e.*, t.token, t.expires_at, u.name AS pic_name, u.employee_id AS pic_employee_id
        FROM events e
        LEFT JOIN tokens t ON t.event_id = e.id
        LEFT JOIN users u ON u.id = e.user_id
@@ -39,6 +52,12 @@ export async function POST(req: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (session.role === "user") {
+    return NextResponse.json(
+      { error: "Hanya PIC / Asisten / Admin yang bisa membuat event" },
+      { status: 403 }
+    );
   }
 
   await initDB();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
+import { getSession } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
@@ -8,7 +9,20 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { employee_id, clock_out, task, token, event_id } = body;
 
-    if (!employee_id || !clock_out || !token || !event_id) {
+    const session = await getSession();
+    let effEmployeeId = employee_id;
+
+    if (session) {
+      const me = await sql.query(
+        "SELECT employee_id FROM users WHERE id = $1",
+        [session.userId]
+      );
+      if (me.length > 0) {
+        effEmployeeId = me[0].employee_id || effEmployeeId;
+      }
+    }
+
+    if (!effEmployeeId || !clock_out || !token || !event_id) {
       return NextResponse.json(
         { error: "Field wajib diisi" },
         { status: 400 }
@@ -16,12 +30,18 @@ export async function POST(req: Request) {
     }
 
     const validToken = await sql.query(
-      "SELECT id FROM tokens WHERE token = $1 AND event_id = $2",
+      "SELECT id, expires_at FROM tokens WHERE token = $1 AND event_id = $2",
       [token, event_id]
     );
     if (validToken.length === 0) {
       return NextResponse.json(
         { error: "Token tidak valid" },
+        { status: 401 }
+      );
+    }
+    if (new Date() > new Date(new Date(validToken[0].expires_at).getTime() + 60000)) {
+      return NextResponse.json(
+        { error: "Token sudah kedaluwarsa, minta token baru ke PIC" },
         { status: 401 }
       );
     }
@@ -32,7 +52,7 @@ export async function POST(req: Request) {
     const existing = await sql.query(
       `SELECT id, task AS existing_task FROM attendance
        WHERE employee_id = $1 AND event_id = $2 AND date = $3 AND clock_out IS NULL`,
-      [employee_id, event_id, date]
+      [effEmployeeId, event_id, date]
     );
     if (existing.length === 0) {
       return NextResponse.json(

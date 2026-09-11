@@ -6,9 +6,9 @@ export async function POST(req: Request) {
   try {
     await initDB();
     const sql = getSql();
-    const { username, password, name } = await req.json();
+    const { employee_id, password, name } = await req.json();
 
-    if (!username || !password || !name) {
+    if (!employee_id || !password || !name) {
       return NextResponse.json(
         { error: "Semua field wajib diisi" },
         { status: 400 }
@@ -16,12 +16,12 @@ export async function POST(req: Request) {
     }
 
     const existing = await sql.query(
-      "SELECT id FROM users WHERE username = $1",
-      [username]
+      "SELECT id FROM users WHERE employee_id = $1",
+      [employee_id]
     );
     if (existing.length > 0) {
       return NextResponse.json(
-        { error: "Username sudah digunakan" },
+        { error: "ID Karyawan sudah terdaftar" },
         { status: 409 }
       );
     }
@@ -30,17 +30,17 @@ export async function POST(req: Request) {
     const isFirst = Number(count[0].count) === 0;
 
     const hashed = await hashPassword(password);
-    const role = isFirst ? "admin" : "pic";
+    const role = isFirst ? "admin" : "user";
 
     const result = await sql.query(
-      `INSERT INTO users (username, password, name, role)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [username, hashed, name, role]
+      `INSERT INTO users (username, employee_id, password, name, role)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [employee_id, employee_id, hashed, name, role]
     );
 
     const token = await createSessionToken({
       userId: Number(result[0].id),
-      username,
+      username: employee_id,
       name,
       role,
     });

@@ -1,7 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+
+const QrScanner = dynamic(() => import("@/components/QrScanner"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full rounded-xl bg-gray-100 min-h-[220px] flex items-center justify-center text-sm text-gray-400">
+      Memuat kamera...
+    </div>
+  ),
+});
 
 const DIVISI_LIST = [
   "Acara",
@@ -16,45 +27,90 @@ const DIVISI_LIST = [
   "IT",
 ];
 
-export default function Home() {
-  const [mode, setMode] = useState<"clockin" | "clockout">("clockin");
-  const [token, setToken] = useState("");
-  const [eventInfo, setEventInfo] = useState<{
-    event_id: number;
-    event_name: string;
-    event_date: string;
-    location: string;
-  } | null>(null);
-  const [tokenError, setTokenError] = useState("");
-  const [tokenLoading, setTokenLoading] = useState(false);
+type User = {
+  id: number;
+  username: string;
+  employee_id: string | null;
+  name: string;
+  role: string;
+};
 
-  const [employeeId, setEmployeeId] = useState("");
-  const [employeeName, setEmployeeName] = useState("");
+type MyEvent = {
+  id: number;
+  name: string;
+  event_date: string;
+  location: string;
+  description: string;
+  attendance_id: number | null;
+  clock_in: string | null;
+  clock_out: string | null;
+  division: string | null;
+  task: string | null;
+  has_attendance: number;
+  is_active: number;
+};
+
+export default function HomePage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [myEvents, setMyEvents] = useState<MyEvent[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [entryMode, setEntryMode] = useState<"scan" | "token">("scan");
+  const [tokenInput, setTokenInput] = useState("");
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const [scanned, setScanned] = useState<{
+    event: { event_id: number; event_name: string; event_date: string; location: string };
+    attendance: { id: number; clock_in: string; clock_out: string | null } | null;
+    token: string;
+  } | null>(null);
   const [division, setDivision] = useState("");
   const [task, setTask] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [currentTime, setCurrentTime] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
 
   useEffect(() => {
-    const update = () => {
-      const now = new Date();
+    const update = () =>
       setCurrentTime(
-        now.toLocaleTimeString("id-ID", {
+        new Date().toLocaleTimeString("id-ID", {
           timeZone: "Asia/Jakarta",
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
         })
       );
-    };
     update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
   }, []);
+
+  const fetchMe = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me");
+      const data = await res.json();
+      if (res.ok) setUser(data.user);
+    } catch {
+      /* noop */
+    } finally {
+      setLoadingUser(false);
+    }
+  }, []);
+
+  const fetchMyEvents = useCallback(async () => {
+    try {
+      const res = await fetch("/api/my-events");
+      const data = await res.json();
+      if (data.success) setMyEvents(data.data);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMe().then(() => fetchMyEvents());
+  }, [fetchMe, fetchMyEvents]);
 
   const getTimeNow = () =>
     new Date().toLocaleTimeString("sv-SE", {
@@ -64,226 +120,455 @@ export default function Home() {
       second: "2-digit",
     });
 
-  const handleValidateToken = async () => {
-    if (token.length !== 6) return;
-    setTokenLoading(true);
-    setTokenError("");
-    setEventInfo(null);
+  const openModal = () => {
+    setModalOpen(true);
+    setScanned(null);
+    setTokenInput("");
+    setScanError("");
+    setEntryMode("scan");
+    setMessage(null);
+  };
+
+  const handleProcessScan = async (value: string) => {
+    const qr = value.trim();
+    if (!qr) return;
+    setScanLoading(true);
+    setScanError("");
     try {
-      const res = await fetch("/api/tokens/validate", {
+      const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ qr }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setEventInfo(data.event);
-    } catch (err: unknown) {
-      setTokenError(
-        err instanceof Error ? err.message : "Token tidak valid"
-      );
-    } finally {
-      setTokenLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!eventInfo) return;
-    setLoading(true);
-    setMessage(null);
-
-    try {
-      if (mode === "clockin") {
-        const res = await fetch("/api/clock-in", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            employee_id: employeeId,
-            employee_name: employeeName,
-            division,
-            clock_in: getTimeNow(),
-            task,
-            token,
-            event_id: eventInfo.event_id,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        setMessage({
-          type: "success",
-          text: `Clock in berhasil — ${eventInfo.event_name}`,
-        });
-      } else {
-        const res = await fetch("/api/clock-out", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            employee_id: employeeId,
-            clock_out: getTimeNow(),
-            task,
-            token,
-            event_id: eventInfo.event_id,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        setMessage({
-          type: "success",
-          text: `Clock out berhasil — ${eventInfo.event_name}`,
-        });
-      }
-      setEmployeeId("");
-      setEmployeeName("");
+      setScanned({ event: data.event, attendance: data.attendance, token: qr });
       setDivision("");
       setTask("");
     } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Terjadi kesalahan";
-      setMessage({ type: "error", text: errorMsg });
+      setScanError(err instanceof Error ? err.message : "Gagal memproses");
     } finally {
-      setLoading(false);
+      setScanLoading(false);
+    }
+  };
+
+  const handleSubmitToken = () => handleProcessScan(tokenInput);
+
+  const handleClockIn = async () => {
+    if (!scanned) return;
+    setActionLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/clock-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          division,
+          clock_in: getTimeNow(),
+          task,
+          token: scanned.token,
+          event_id: scanned.event.event_id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMessage({ type: "success", text: `Clock in berhasil — ${scanned.event.event_name}` });
+      setModalOpen(false);
+      setScanned(null);
+      await fetchMyEvents();
+    } catch (err: unknown) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Terjadi kesalahan" });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClockOut = async () => {
+    if (!scanned) return;
+    setActionLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/clock-out", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clock_out: getTimeNow(),
+          task,
+          token: scanned.token,
+          event_id: scanned.event.event_id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMessage({ type: "success", text: `Clock out berhasil — ${scanned.event.event_name}` });
+      setModalOpen(false);
+      setScanned(null);
+      await fetchMyEvents();
+    } catch (err: unknown) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Terjadi kesalahan" });
+    } finally {
+      setActionLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-white/10 backdrop-blur-sm rounded-full mb-4">
-            <svg
-              className="w-10 h-10 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+    <main className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 pb-16">
+      <header className="bg-white/10 backdrop-blur-sm border-b border-white/10">
+        <div className="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-white font-bold text-lg">Kehadiran Acara</h1>
+            {user && (
+              <p className="text-blue-200 text-xs">
+                {user.name}
+                {user.employee_id ? ` (${user.employee_id})` : ""} —{" "}
+                {user.role.toUpperCase()}
+              </p>
+            )}
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">
-            Daftar Hadir Panitia
-          </h1>
-          <p className="text-blue-200 text-sm">Clock In / Clock Out</p>
-          <p className="text-4xl font-mono text-white mt-4 tracking-wider">
+          <div className="flex items-center gap-2">
+            {user && user.role !== "user" && (
+              <Link
+                href="/dashboard"
+                className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-lg text-xs font-medium text-white transition-colors"
+              >
+                Dashboard
+              </Link>
+            )}
+            {user ? (
+              <button
+                onClick={async () => {
+                  await fetch("/api/auth/logout", { method: "POST" });
+                  router.push("/login");
+                }}
+                className="px-3 py-1.5 bg-red-500/80 hover:bg-red-600 rounded-lg text-xs font-medium text-white transition-colors"
+              >
+                Logout
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-lg text-xs font-medium text-white transition-colors"
+              >
+                Login
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-lg mx-auto px-4 mt-6 space-y-6">
+        <div className="text-center">
+          <p className="text-5xl font-mono text-white font-bold tracking-wider">
             {currentTime}
+          </p>
+          <p className="text-blue-200 text-xs mt-1">
+            Clock In / Clock Out — scan QR atau masukkan token dari PIC
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-          {!eventInfo ? (
-            <div className="p-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Masukkan Token 6 Digit dari PIC
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={token}
-                onChange={(e) =>
-                  setToken(e.target.value.replace(/\D/g, "").slice(0, 6))
-                }
-                placeholder="000000"
-                className="w-full text-center text-3xl font-mono tracking-[0.5em] px-4 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
-              />
-              {tokenError && (
-                <p className="text-red-500 text-sm mt-2 text-center">
-                  {tokenError}
-                </p>
-              )}
-              <button
-                onClick={handleValidateToken}
-                disabled={token.length !== 6 || tokenLoading}
-                className="w-full mt-4 py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-              >
-                {tokenLoading ? "Memverifikasi..." : "Masukkan Token"}
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="bg-blue-50 border-b border-blue-100 px-6 py-4">
-                <p className="text-xs text-blue-500 uppercase tracking-wider mb-1">
-                  Event Aktif
-                </p>
-                <p className="font-semibold text-gray-900">
-                  {eventInfo.event_name}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {eventInfo.event_date}
-                  {eventInfo.location ? ` — ${eventInfo.location}` : ""}
-                </p>
-                <button
-                  onClick={() => {
-                    setEventInfo(null);
-                    setToken("");
-                    setTokenError("");
-                    setMessage(null);
-                  }}
-                  className="text-xs text-blue-600 hover:underline mt-1"
-                >
-                  Ganti token
-                </button>
-              </div>
+        {!user && !loadingUser && (
+          <div className="bg-white rounded-2xl shadow-2xl p-6 text-center">
+            <p className="text-gray-700 font-medium mb-1">Belum login?</p>
+            <p className="text-sm text-gray-500 mb-4">
+              Karyawan harus login dengan ID karyawan untuk bisa melihat daftar
+              event dan clock in/out.
+            </p>
+            <Link
+              href="/login"
+              className="inline-block w-full py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-all"
+            >
+              Login / Register
+            </Link>
+          </div>
+        )}
 
-              <div className="flex">
-                <button
-                  onClick={() => setMode("clockin")}
-                  className={`flex-1 py-3 font-semibold text-sm transition-all ${
-                    mode === "clockin"
-                      ? "bg-green-500 text-white"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
+        {user && (
+          <>
+            <button
+              onClick={openModal}
+              className="w-full bg-white rounded-2xl shadow-2xl p-8 text-center group hover:ring-2 hover:ring-blue-300 transition-all"
+            >
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4 group-hover:scale-105 transition-transform">
+                <svg
+                  className="w-8 h-8 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
                 >
-                  CLOCK IN
-                </button>
-                <button
-                  onClick={() => setMode("clockout")}
-                  className={`flex-1 py-3 font-semibold text-sm transition-all ${
-                    mode === "clockout"
-                      ? "bg-red-500 text-white"
-                      : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                  }`}
-                >
-                  CLOCK OUT
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    ID Karyawan
-                  </label>
-                  <input
-                    type="text"
-                    value={employeeId}
-                    onChange={(e) => setEmployeeId(e.target.value)}
-                    placeholder="Masukkan ID karyawan"
-                    required
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"
                   />
+                </svg>
+              </div>
+              <p className="font-semibold text-gray-900 text-lg">
+                Scan QR / Masukkan Token
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                Ketuk untuk clock in / clock out pada event
+              </p>
+            </button>
+
+            {message && (
+              <div
+                className={`px-4 py-3 rounded-xl text-sm font-medium ${
+                  message.type === "success"
+                    ? "bg-green-500/20 text-green-100 border border-green-400/30"
+                    : "bg-red-500/20 text-red-100 border border-red-400/30"
+                }`}
+              >
+                {message.text}
+              </div>
+            )}
+
+            <section>
+              <h2 className="text-white font-semibold mb-3 flex items-center gap-2">
+                <span>Event Saya</span>
+                <button
+                  onClick={fetchMyEvents}
+                  className="text-xs text-blue-200 underline hover:text-white"
+                >
+                  muat ulang
+                </button>
+              </h2>
+              {myEvents.length === 0 ? (
+                <div className="bg-white/10 rounded-xl border border-white/10 px-5 py-8 text-center text-blue-100 text-sm">
+                  Belum ada event. Scan QR di lokasi event untuk mulai.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myEvents.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="bg-white rounded-xl shadow-md p-4"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold text-gray-900">{ev.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {ev.event_date}
+                            {ev.location ? ` — ${ev.location}` : ""}
+                          </p>
+                        </div>
+                        {Boolean(ev.is_active) ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
+                            Bekerja
+                          </span>
+                        ) : ev.has_attendance ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
+                            Selesai
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+                            Belum clock in
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between mt-3 border-t border-gray-100 pt-3">
+                        <div className="text-xs text-gray-500">
+                          {ev.clock_in && (
+                            <span>
+                              Masuk: <b className="font-mono">{ev.clock_in}</b>
+                            </span>
+                          )}
+                          {ev.clock_out && (
+                            <span className="ml-3">
+                              Pulang: <b className="font-mono">{ev.clock_out}</b>
+                            </span>
+                          )}
+                          {!ev.clock_in && <span>Belum ada data hari ini</span>}
+                        </div>
+                        {!ev.clock_out && ev.has_attendance ? (
+                          <button
+                            onClick={openModal}
+                            className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors"
+                          >
+                            Clock Out
+                          </button>
+                        ) : !ev.has_attendance ? (
+                          <button
+                            onClick={openModal}
+                            className="px-3 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-semibold transition-colors"
+                          >
+                            Clock In
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
+      </div>
+
+      {modalOpen && user && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+            {!scanned ? (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-900">
+                    Scan QR / Masukkan Token
+                  </h3>
+                  <button
+                    onClick={() => setModalOpen(false)}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                    aria-label="Tutup"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
                 </div>
 
-                {mode === "clockin" && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Nama Karyawan
-                      </label>
-                      <input
-                        type="text"
-                        value={employeeName}
-                        onChange={(e) => setEmployeeName(e.target.value)}
-                        placeholder="Masukkan nama lengkap"
-                        required
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
-                      />
-                    </div>
+                <div className="flex rounded-xl bg-gray-100 p-1 mb-4">
+                  <button
+                    onClick={() => setEntryMode("scan")}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                      entryMode === "scan"
+                        ? "bg-white shadow text-gray-900"
+                        : "text-gray-500"
+                    }`}
+                  >
+                    Scan QR
+                  </button>
+                  <button
+                    onClick={() => setEntryMode("token")}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                      entryMode === "token"
+                        ? "bg-white shadow text-gray-900"
+                        : "text-gray-500"
+                    }`}
+                  >
+                    Masukkan Token
+                  </button>
+                </div>
 
+                {entryMode === "scan" ? (
+                  <>
+                    <QrScanner
+                      onResult={handleProcessScan}
+                      onError={() =>
+                        setScanError(
+                          "Gagal mengakses kamera. Coba mode 'Masukkan Token'."
+                        )
+                      }
+                    />
+                    <p className="text-xs text-gray-400 text-center mt-2">
+                      Arahkan kamera ke QR code yang ditampilkan PIC di lokasi
+                      event.
+                    </p>
+                  </>
+                ) : (
+                  <div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={tokenInput}
+                      onChange={(e) =>
+                        setTokenInput(e.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      placeholder="000000"
+                      className="w-full text-center text-3xl font-mono tracking-[0.5em] px-4 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
+                    />
+                    <p className="text-xs text-gray-400 text-center mt-2">
+                      Token 6 digit dari PIC, berlaku 5 menit.
+                    </p>
+                  </div>
+                )}
+
+                {scanError && (
+                  <p className="text-red-500 text-sm mt-2 text-center">
+                    {scanError}
+                  </p>
+                )}
+
+                {entryMode === "token" && (
+                  <button
+                    onClick={handleSubmitToken}
+                    disabled={tokenInput.length !== 6 || scanLoading}
+                    className="w-full mt-4 py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  >
+                    {scanLoading ? "Memverifikasi..." : "Verifikasi Token"}
+                  </button>
+                )}
+                {entryMode === "scan" && scanLoading && (
+                  <p className="text-center text-sm text-gray-500 mt-3">
+                    Memverifikasi QR...
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-900">Event Ditemukan</h3>
+                  <button
+                    onClick={() => {
+                      setScanned(null);
+                      setModalOpen(false);
+                    }}
+                    className="p-2 text-gray-400 hover:text-gray-600"
+                    aria-label="Tutup"
+                  >
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+                  <p className="font-semibold text-gray-900">
+                    {scanned.event.event_name}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {scanned.event.event_date}
+                    {scanned.event.location ? ` — ${scanned.event.location}` : ""}
+                  </p>
+                </div>
+
+                {scanned.attendance && !scanned.attendance.clock_out ? (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">
+                      Status:{" "}
+                      <span className="text-orange-600 font-semibold">
+                        Sudah clock in pada {scanned.attendance.clock_in}
+                      </span>
+                    </p>
+                    <button
+                      onClick={handleClockOut}
+                      disabled={actionLoading}
+                      className="w-full py-3 rounded-xl font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-all"
+                    >
+                      {actionLoading ? "Memproses..." : "Clock Out Sekarang"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Divisi
@@ -291,8 +576,7 @@ export default function Home() {
                       <select
                         value={division}
                         onChange={(e) => setDivision(e.target.value)}
-                        required
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900 bg-white"
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
                       >
                         <option value="">Pilih divisi</option>
                         {DIVISI_LIST.map((d) => (
@@ -302,66 +586,43 @@ export default function Home() {
                         ))}
                       </select>
                     </div>
-                  </>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {mode === "clockin" ? "Tugas Hari Ini" : "Update Tugas"}
-                    <span className="text-gray-400 font-normal ml-1">
-                      (opsional)
-                    </span>
-                  </label>
-                  <textarea
-                    value={task}
-                    onChange={(e) => setTask(e.target.value)}
-                    placeholder="Apa yang sedang/sudah dikerjakan?"
-                    rows={3}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none text-gray-900"
-                  />
-                </div>
-
-                {message && (
-                  <div
-                    className={`px-4 py-3 rounded-lg text-sm font-medium ${
-                      message.type === "success"
-                        ? "bg-green-50 text-green-700 border border-green-200"
-                        : "bg-red-50 text-red-700 border border-red-200"
-                    }`}
-                  >
-                    {message.text}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Tugas (opsional)
+                      </label>
+                      <textarea
+                        value={task}
+                        onChange={(e) => setTask(e.target.value)}
+                        rows={2}
+                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none text-gray-900"
+                      />
+                    </div>
+                    <button
+                      onClick={handleClockIn}
+                      disabled={actionLoading || !division}
+                      className="w-full py-3 rounded-xl font-semibold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 transition-all"
+                    >
+                      {actionLoading ? "Memproses..." : "Clock In Sekarang"}
+                    </button>
                   </div>
                 )}
 
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className={`w-full py-3 rounded-lg font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                    mode === "clockin"
-                      ? "bg-green-500 hover:bg-green-600 active:bg-green-700"
-                      : "bg-red-500 hover:bg-red-600 active:bg-red-700"
-                  }`}
+                  onClick={() => {
+                    setScanned(null);
+                    setTokenInput("");
+                    setScanError("");
+                    setEntryMode("scan");
+                  }}
+                  className="w-full mt-3 text-sm text-blue-600 hover:underline"
                 >
-                  {loading
-                    ? "Memproses..."
-                    : mode === "clockin"
-                      ? "Clock In Sekarang"
-                      : "Clock Out Sekarang"}
+                  Scan / masukkan token lain
                 </button>
-              </form>
-            </>
-          )}
+              </div>
+            )}
+          </div>
         </div>
-
-        <div className="text-center mt-6">
-          <Link
-            href="/login"
-            className="text-blue-200 hover:text-white text-sm transition-colors"
-          >
-            Login sebagai PIC / Admin &rarr;
-          </Link>
-        </div>
-      </div>
+      )}
     </main>
   );
 }

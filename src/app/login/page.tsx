@@ -7,7 +7,7 @@ import Link from "next/link";
 export default function LoginPage() {
   const router = useRouter();
   const [isRegister, setIsRegister] = useState(false);
-  const [username, setUsername] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,19 +19,31 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const endpoint = isRegister ? "/api/auth/register" : "/api/auth/login";
-      const body = isRegister
-        ? { username, password, name }
-        : { username, password };
-
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      let res: Response;
+      if (isRegister) {
+        res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employee_id: identifier,
+            password,
+            name,
+          }),
+        });
+      } else {
+        res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            identifier,
+            password,
+          }),
+        });
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      router.push("/dashboard");
+      const target = data.role === "user" ? "/" : "/dashboard";
+      router.push(target);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
@@ -43,9 +55,13 @@ export default function LoginPage() {
     <main className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-white">Dashboard PIC / Admin</h1>
+          <h1 className="text-2xl font-bold text-white">
+            {isRegister ? "Daftar Karyawan" : "Masuk"}
+          </h1>
           <p className="text-blue-200 text-sm mt-1">
-            {isRegister ? "Buat akun baru" : "Masuk ke akun Anda"}
+            {isRegister
+              ? "Buat akun dengan ID karyawan"
+              : "Masuk menggunakan ID karyawan"}
           </p>
         </div>
 
@@ -68,13 +84,14 @@ export default function LoginPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Username
+                ID Karyawan
               </label>
               <input
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
+                placeholder="cth: KRY-001"
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
               />
             </div>
@@ -95,7 +112,8 @@ export default function LoginPage() {
             {isRegister && (
               <p className="text-xs text-gray-400">
                 Pengguna pertama yang register otomatis menjadi <b>Admin</b>.
-                Pengguna selanjutnya menjadi <b>PIC</b>.
+                Pengguna selanjutnya berperan <b>User</b> dan bisa dijadikan{" "}
+                <b>PIC</b> / <b>Asisten PIC</b>.
               </p>
             )}
 
@@ -138,7 +156,7 @@ export default function LoginPage() {
             href="/"
             className="text-blue-200 hover:text-white text-sm transition-colors"
           >
-            &larr; Kembali ke Clock In / Out
+            &larr; Kembali ke Beranda
           </Link>
         </div>
       </div>
