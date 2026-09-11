@@ -11,25 +11,49 @@ export async function GET() {
 
     await initDB();
     const sql = getSql();
-    const today = new Date().toLocaleDateString("sv-SE", {
-      timeZone: "Asia/Jakarta",
-    });
 
     const rows = await sql.query(
       `SELECT e.id, e.name, e.event_date, e.location, e.description,
-              a.id AS attendance_id, a.clock_in, a.clock_out, a.division, a.task,
-              CASE WHEN a.id IS NULL THEN 0 ELSE 1 END AS has_attendance,
-              CASE WHEN a.clock_out IS NULL AND a.id IS NOT NULL THEN 1 ELSE 0 END AS is_active
+              d.name AS division_name,
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                  'attendance_id', a.id,
+                  'clock_in', a.clock_in,
+                  'clock_out', a.clock_out,
+                  'division', a.division,
+                  'task', a.task,
+                  'date', a.date
+                ) ORDER BY a.id DESC)
+                FROM attendance a
+                WHERE a.event_id = e.id AND a.user_id = $1),
+                '[]'::json
+              ) AS sessions
        FROM user_events ue
        JOIN events e ON e.id = ue.event_id
-       LEFT JOIN attendance a
-         ON a.event_id = e.id AND a.user_id = $1 AND a.date = $2
+       LEFT JOIN divisions d ON d.id = e.division_id
        WHERE ue.user_id = $1
        ORDER BY e.event_date DESC, e.created_at DESC`,
-      [session.userId, today]
+      [session.userId]
     );
 
-    return NextResponse.json({ success: true, data: rows });
+    const data = rows.map((row) => {
+      const sessions = (row.sessions as any[]) ?? [];
+      const latest = sessions[0] ?? null;
+      return {
+        id: row.id,
+        name: row.name,
+        event_date: row.event_date,
+        location: row.location,
+        description: row.description,
+        division_name: row.division_name,
+        sessions,
+        has_attendance: sessions.length > 0 ? 1 : 0,
+        is_active:
+          latest && !latest.clock_out ? 1 : 0,
+      };
+    });
+
+    return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error("My events error:", error);
     return NextResponse.json(

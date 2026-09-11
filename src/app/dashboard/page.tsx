@@ -4,7 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import * as XLSX from "xlsx";
 import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
+import { useToast } from "@/lib/useToast";
+import ToastContainer from "@/components/Toast";
 
 const QrDisplay = dynamic(() => import("@/components/QrDisplay"), {
   ssr: false,
@@ -24,6 +27,9 @@ interface Event {
   token: string | null;
   expires_at: string | null;
   pic_name: string;
+  user_id: number;
+  division_name: string | null;
+  division_id: number | null;
 }
 
 interface Attendance {
@@ -64,7 +70,13 @@ interface AdminUser {
   total_events: number;
 }
 
-type Tab = "events" | "asisten" | "users";
+interface Division {
+  id: number;
+  name: string;
+  total_events: number;
+}
+
+type Tab = "events" | "asisten" | "users" | "divisi";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -78,6 +90,7 @@ export default function DashboardPage() {
   const [records, setRecords] = useState<Attendance[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("events");
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -86,6 +99,7 @@ export default function DashboardPage() {
     event_date: "",
     location: "",
     description: "",
+    division_id: "" as string,
   });
   const [createLoading, setCreateLoading] = useState(false);
   const [genTokenLoading, setGenTokenLoading] = useState<number | null>(null);
@@ -94,12 +108,29 @@ export default function DashboardPage() {
 
   const [qrEvent, setQrEvent] = useState<Event | null>(null);
 
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [newDivName, setNewDivName] = useState("");
+  const [editDiv, setEditDiv] = useState<{ id: number; name: string } | null>(null);
+  const [editDivName, setEditDivName] = useState("");
+  const [divLoading, setDivLoading] = useState(false);
+
+  const [editEvent, setEditEvent] = useState<Event | null>(null);
+  const [editEventData, setEditEventData] = useState({
+    name: "",
+    event_date: "",
+    location: "",
+    description: "",
+    division_id: "" as string,
+  });
+  const [editEventLoading, setEditEventLoading] = useState(false);
+
   const [assistans, setAssistans] = useState<Asisten[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
 
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [roleDraft, setRoleDraft] = useState<Record<number, string>>({});
   const [roleSaving, setRoleSaving] = useState<number | null>(null);
+  const [deletingUser, setDeletingUser] = useState<number | null>(null);
   const [resetTarget, setResetTarget] = useState<{
     id: number;
     name: string;
@@ -107,7 +138,7 @@ export default function DashboardPage() {
   } | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetError, setResetError] = useState("");
+  const { toasts, success, error, dismiss } = useToast();
 
   const fetchUser = useCallback(async () => {
     try {
@@ -134,6 +165,7 @@ export default function DashboardPage() {
   }, []);
 
   const fetchRecords = useCallback(async (eventId?: number) => {
+    setRecordsLoading(true);
     try {
       const params = new URLSearchParams();
       if (eventId) params.set("event_id", String(eventId));
@@ -142,6 +174,8 @@ export default function DashboardPage() {
       if (data.success) setRecords(data.data);
     } catch {
       /* noop */
+    } finally {
+      setRecordsLoading(false);
     }
   }, []);
 
@@ -168,9 +202,20 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchDivisions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/divisions");
+      const data = await res.json();
+      if (data.success) setDivisions(data.data);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
   useEffect(() => {
     Promise.all([fetchUser(), fetchEvents()]).then(() => setLoading(false));
-  }, [fetchUser, fetchEvents]);
+    fetchDivisions();
+  }, [fetchUser, fetchEvents, fetchDivisions]);
 
   useEffect(() => {
     if (selectedEventId) fetchRecords(selectedEventId);
@@ -179,7 +224,8 @@ export default function DashboardPage() {
   useEffect(() => {
     if (activeTab === "asisten") fetchAsisten();
     if (activeTab === "users") fetchUsers();
-  }, [activeTab, fetchAsisten, fetchUsers]);
+    if (activeTab === "divisi") fetchDivisions();
+  }, [activeTab, fetchAsisten, fetchUsers, fetchDivisions]);
 
   useOnAuthLogout(() => {
     setUser(null);
@@ -199,15 +245,22 @@ export default function DashboardPage() {
       const res = await fetch("/api/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newEvent),
+        body: JSON.stringify({
+          name: newEvent.name,
+          event_date: newEvent.event_date,
+          location: newEvent.location,
+          description: newEvent.description,
+          division_id: newEvent.division_id ? Number(newEvent.division_id) : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setNewEvent({ name: "", event_date: "", location: "", description: "" });
+      success("Event berhasil dibuat");
+      setNewEvent({ name: "", event_date: "", location: "", description: "", division_id: "" });
       setShowCreateForm(false);
       await fetchEvents();
-    } catch {
-      /* noop */
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal membuat event");
     } finally {
       setCreateLoading(false);
     }
@@ -217,17 +270,21 @@ export default function DashboardPage() {
     async (eventId: number) => {
       setGenTokenLoading(eventId);
       try {
-        await fetch("/api/tokens", {
+        const res = await fetch("/api/tokens", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ event_id: eventId }),
         });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
         await fetchEvents();
+      } catch (err: unknown) {
+        error(err instanceof Error ? err.message : "Gagal membuat token");
       } finally {
         setGenTokenLoading(null);
       }
     },
-    [fetchEvents]
+    [fetchEvents, error]
   );
 
   useEffect(() => {
@@ -257,29 +314,42 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [events, handleGenerateToken]);
 
+  useEffect(() => {
+    if (!qrEvent) return;
+    if ((countdowns[qrEvent.id] ?? 0) <= 0) {
+      setQrEvent(null);
+    }
+  }, [qrEvent, countdowns]);
+
   const handleAddAsisten = async (userId: number) => {
     try {
-      await fetch("/api/asisten", {
+      const res = await fetch("/api/asisten", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assistant_user_id: userId }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Asisten berhasil ditambahkan");
       await fetchAsisten();
-    } catch {
-      /* noop */
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menambahkan asisten");
     }
   };
 
   const handleRemoveAsisten = async (userId: number) => {
     try {
-      await fetch("/api/asisten", {
+      const res = await fetch("/api/asisten", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assistant_user_id: userId }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Asisten berhasil dihapus");
       await fetchAsisten();
-    } catch {
-      /* noop */
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menghapus asisten");
     }
   };
 
@@ -288,14 +358,17 @@ export default function DashboardPage() {
     if (!role) return;
     setRoleSaving(userId);
     try {
-      await fetch("/api/users", {
+      const res = await fetch("/api/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: userId, role }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success(`Role user diubah menjadi ${role}`);
       await fetchUsers();
-    } catch {
-      /* noop */
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal mengubah role");
     } finally {
       setRoleSaving(null);
     }
@@ -304,7 +377,6 @@ export default function DashboardPage() {
   const handleResetPassword = async () => {
     if (!resetTarget) return;
     setResetLoading(true);
-    setResetError("");
     try {
       const res = await fetch("/api/users/reset-password", {
         method: "POST",
@@ -318,12 +390,155 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error);
       setResetTarget(null);
       setNewPassword("");
+      success(`Password ${resetTarget.name} berhasil direset`);
     } catch (err: unknown) {
-      setResetError(
+      error(
         err instanceof Error ? err.message : "Gagal mereset password"
       );
     } finally {
       setResetLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    if (!window.confirm("Yakin ingin menghapus user ini? Semua data terkait akan ikut terhapus.")) return;
+    setDeletingUser(userId);
+    try {
+      const res = await fetch("/api/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("User berhasil dihapus");
+      await fetchUsers();
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menghapus user");
+    } finally {
+      setDeletingUser(null);
+    }
+  };
+
+  const handleAddDivision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDivName.trim()) return;
+    setDivLoading(true);
+    try {
+      const res = await fetch("/api/divisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newDivName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Divisi berhasil ditambahkan");
+      setNewDivName("");
+      await fetchDivisions();
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menambahkan divisi");
+    } finally {
+      setDivLoading(false);
+    }
+  };
+
+  const handleEditDivision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editDiv || !editDivName.trim()) return;
+    setDivLoading(true);
+    try {
+      const res = await fetch("/api/divisions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editDiv.id, name: editDivName.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Divisi berhasil diperbarui");
+      setEditDiv(null);
+      setEditDivName("");
+      await fetchDivisions();
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal memperbarui divisi");
+    } finally {
+      setDivLoading(false);
+    }
+  };
+
+  const handleDeleteDivision = async (id: number) => {
+    if (!window.confirm("Yakin ingin menghapus divisi ini?")) return;
+    try {
+      const res = await fetch("/api/divisions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Divisi berhasil dihapus");
+      await fetchDivisions();
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menghapus divisi");
+    }
+  };
+
+  const handleEditEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editEvent) return;
+    setEditEventLoading(true);
+    try {
+      const res = await fetch("/api/events", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editEvent.id,
+          name: editEventData.name,
+          event_date: editEventData.event_date,
+          location: editEventData.location,
+          description: editEventData.description,
+          division_id: editEventData.division_id
+            ? Number(editEventData.division_id)
+            : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Event berhasil diperbarui");
+      setEditEvent(null);
+      await fetchEvents();
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal memperbarui event");
+    } finally {
+      setEditEventLoading(false);
+    }
+  };
+
+  const openEditEvent = (ev: Event) => {
+    setEditEvent(ev);
+    setEditEventData({
+      name: ev.name,
+      event_date: ev.event_date,
+      location: ev.location,
+      description: ev.description,
+      division_id: ev.division_id ? String(ev.division_id) : "",
+    });
+  };
+
+  const handleDeleteEvent = async (ev: Event) => {
+    if (!window.confirm(`Yakin ingin menghapus event "${ev.name}"? Semua kehadiran terkait akan ikut terhapus.`)) return;
+    try {
+      const res = await fetch("/api/events", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: ev.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Event berhasil dihapus");
+      if (selectedEventId === ev.id) setSelectedEventId(null);
+      await fetchEvents();
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menghapus event");
     }
   };
 
@@ -343,6 +558,39 @@ export default function DashboardPage() {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const handleExportExcel = (eventId: number) => {
+    const ev = events.find((e) => e.id === eventId);
+    if (!ev) return;
+    const data = records.map((r, i) => ({
+      "No.": i + 1,
+      "ID Karyawan": r.employee_id,
+      Nama: r.employee_name,
+      Divisi: r.division,
+      Tanggal: r.date,
+      "Jam Masuk": r.clock_in,
+      "Jam Pulang": r.clock_out || "",
+      Durasi: formatDuration(r.clock_in, r.clock_out),
+      Status: r.clock_out ? "Selesai" : "Bekerja",
+      Tugas: r.task || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [
+      { wch: 5 },
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 30 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Kehadiran");
+    XLSX.writeFile(wb, `Kehadiran_${ev.name.replace(/\s+/g, "_")}_${ev.event_date}.xlsx`);
   };
 
   if (loading) {
@@ -446,6 +694,18 @@ export default function DashboardPage() {
                 Pengguna
               </button>
             )}
+            {user?.role === "admin" && (
+              <button
+                onClick={() => setActiveTab("divisi")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === "divisi"
+                    ? "bg-white text-blue-700"
+                    : "text-blue-100 hover:bg-white/10"
+                }`}
+              >
+                Divisi
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -524,6 +784,25 @@ export default function DashboardPage() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Divisi
+                    </label>
+                    <select
+                      value={newEvent.division_id}
+                      onChange={(e) =>
+                        setNewEvent({ ...newEvent, division_id: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                    >
+                      <option value="">Pilih Divisi</option>
+                      {divisions.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="sm:col-span-2 flex gap-2">
                     <button
                       type="submit"
@@ -566,6 +845,11 @@ export default function DashboardPage() {
                             {ev.event_date}
                             {ev.location ? ` — ${ev.location}` : ""}
                           </p>
+                          {ev.division_name && (
+                            <span className="inline-block mt-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                              {ev.division_name}
+                            </span>
+                          )}
                           {user?.role === "admin" && (
                             <p className="text-xs text-gray-400 mt-0.5">
                               PIC: {ev.pic_name}
@@ -573,6 +857,29 @@ export default function DashboardPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
+                          {(user?.role === "admin" ||
+                            user?.id === ev.user_id) && (
+                            <>
+                              <button
+                                onClick={() => openEditEvent(ev)}
+                                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm transition-colors"
+                                title="Edit event"
+                              >
+                                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEvent(ev)}
+                                className="p-2 bg-red-50 hover:bg-red-100 rounded-lg text-sm transition-colors"
+                                title="Hapus event"
+                              >
+                                <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
                           <button
                             onClick={() =>
                               ev.token ? setQrEvent(ev) : handleGenerateToken(ev.id)
@@ -650,7 +957,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="border-t border-gray-100 bg-gray-50 px-5 py-3">
+                    <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex items-center justify-between">
                       <button
                         onClick={() =>
                           setSelectedEventId(
@@ -663,6 +970,17 @@ export default function DashboardPage() {
                           ? "Sembunyikan Kehadiran"
                           : "Lihat Kehadiran"}
                       </button>
+                      {selectedEventId === ev.id && records.length > 0 && (
+                        <button
+                          onClick={() => handleExportExcel(ev.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-medium rounded-lg transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Export Excel
+                        </button>
+                      )}
                     </div>
 
                     {selectedEventId === ev.id && (
@@ -688,11 +1006,16 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {records.length === 0 ? (
-                          <div className="p-8 text-center text-gray-400 text-sm">
-                            Belum ada kehadiran
-                          </div>
-                        ) : (
+                        {recordsLoading ? (
+                        <div className="p-8 text-center text-gray-400 text-sm">
+                          <div className="inline-block w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin mb-2"></div>
+                          <p>Memuat kehadiran...</p>
+                        </div>
+                      ) : records.length === 0 ? (
+                        <div className="p-8 text-center text-gray-400 text-sm">
+                          Belum ada kehadiran
+                        </div>
+                      ) : (
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                               <thead>
@@ -708,6 +1031,9 @@ export default function DashboardPage() {
                                   </th>
                                   <th className="text-left px-4 py-2 font-semibold text-gray-600">
                                     Divisi
+                                  </th>
+                                  <th className="text-left px-4 py-2 font-semibold text-gray-600">
+                                    Tanggal
                                   </th>
                                   <th className="text-left px-4 py-2 font-semibold text-gray-600">
                                     Masuk
@@ -745,6 +1071,9 @@ export default function DashboardPage() {
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                         {r.division}
                                       </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 font-mono text-gray-500">
+                                      {r.date}
                                     </td>
                                     <td className="px-4 py-2.5 font-mono text-gray-900">
                                       {r.clock_in}
@@ -953,12 +1282,21 @@ export default function DashboardPage() {
                                 employee_id: u.employee_id,
                               });
                               setNewPassword("");
-                              setResetError("");
                             }}
                             className="px-3 py-1 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium transition-colors"
                             title="Reset password user"
                           >
                             Reset PW
+                          </button>
+                          <button
+                            onClick={() => handleDeleteUser(u.id)}
+                            disabled={
+                              u.id === user?.id || deletingUser === u.id
+                            }
+                            className="px-3 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium disabled:opacity-40 transition-colors"
+                            title="Hapus user"
+                          >
+                            {deletingUser === u.id ? "Menghapus..." : "Hapus"}
                           </button>
                         </div>
                       </td>
@@ -969,7 +1307,192 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      {activeTab === "divisi" && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-5 border-b border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900">Kelola Divisi</h2>
+              <p className="text-xs text-gray-400 mt-1">Tambah, ubah, atau hapus divisi yang tersedia.</p>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleAddDivision} className="flex gap-2 mb-6">
+                <input
+                  type="text"
+                  value={newDivName}
+                  onChange={(e) => setNewDivName(e.target.value)}
+                  placeholder="Nama divisi baru"
+                  required
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+                <button
+                  type="submit"
+                  disabled={divLoading || !newDivName.trim()}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
+                >
+                  {divLoading ? "Menyimpan..." : "Tambah"}
+                </button>
+              </form>
+              {divisions.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Belum ada divisi</p>
+              ) : (
+                <div className="space-y-2">
+                  {divisions.map((d) => (
+                    <div
+                      key={d.id}
+                      className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg"
+                    >
+                      {editDiv?.id === d.id ? (
+                        <form
+                          onSubmit={handleEditDivision}
+                          className="flex items-center gap-2 flex-1"
+                        >
+                          <input
+                            type="text"
+                            value={editDivName}
+                            onChange={(e) => setEditDivName(e.target.value)}
+                            autoFocus
+                            className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                          />
+                          <button
+                            type="submit"
+                            disabled={divLoading || !editDivName.trim()}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+                          >
+                            {divLoading ? "..." : "Simpan"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditDiv(null)}
+                            className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-medium transition-colors"
+                          >
+                            Batal
+                          </button>
+                        </form>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="font-medium text-gray-900">{d.name}</span>
+                            <span className="ml-2 text-xs text-gray-400">{d.total_events} event</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setEditDiv({ id: d.id, name: d.name });
+                                setEditDivName(d.name);
+                              }}
+                              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition-colors"
+                              title="Ubah nama divisi"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteDivision(d.id)}
+                              disabled={d.total_events > 0}
+                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
+                              title={d.total_events > 0 ? "Masih dipakai oleh event" : "Hapus divisi"}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+
+      {editEvent && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-900">Edit Event</h3>
+              <button
+                onClick={() => setEditEvent(null)}
+                className="p-2 text-gray-400 hover:text-gray-600"
+                aria-label="Tutup"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleEditEvent} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Event</label>
+                <input
+                  type="text"
+                  value={editEventData.name}
+                  onChange={(e) => setEditEventData({ ...editEventData, name: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
+                <input
+                  type="date"
+                  value={editEventData.event_date}
+                  onChange={(e) => setEditEventData({ ...editEventData, event_date: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Lokasi</label>
+                <input
+                  type="text"
+                  value={editEventData.location}
+                  onChange={(e) => setEditEventData({ ...editEventData, location: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Deskripsi</label>
+                <input
+                  type="text"
+                  value={editEventData.description}
+                  onChange={(e) => setEditEventData({ ...editEventData, description: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Divisi</label>
+                <select
+                  value={editEventData.division_id}
+                  onChange={(e) => setEditEventData({ ...editEventData, division_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                >
+                  <option value="">Pilih Divisi</option>
+                  {divisions.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={editEventLoading}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
+                >
+                  {editEventLoading ? "Menyimpan..." : "Simpan Perubahan"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditEvent(null)}
+                  className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold transition-colors"
+                >
+                  Batal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {resetTarget && (
         <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -1015,9 +1538,6 @@ export default function DashboardPage() {
               placeholder="Minimal 6 karakter"
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-900"
             />
-            {resetError && (
-              <p className="text-sm text-red-600 mt-2">{resetError}</p>
-            )}
             <p className="text-xs text-gray-400 mt-2">
               User bisa login dengan password baru. Sesi aktif mereka tetap
               berlaku otomatis.
@@ -1107,6 +1627,8 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </main>
   );
 }

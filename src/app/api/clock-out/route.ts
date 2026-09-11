@@ -51,7 +51,8 @@ export async function POST(req: Request) {
 
     const existing = await sql.query(
       `SELECT id, task AS existing_task FROM attendance
-       WHERE employee_id = $1 AND event_id = $2 AND date = $3 AND clock_out IS NULL`,
+       WHERE employee_id = $1 AND event_id = $2 AND date = $3 AND clock_out IS NULL
+       ORDER BY id DESC LIMIT 1`,
       [effEmployeeId, event_id, date]
     );
     if (existing.length === 0) {

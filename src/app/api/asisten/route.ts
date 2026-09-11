@@ -27,10 +27,10 @@ export async function GET() {
       `SELECT id, employee_id, name, role FROM users
        WHERE role IN ('user', 'asisten')
          AND id NOT IN (
-           SELECT assistant_user_id FROM pic_assistants WHERE pic_user_id = $1
+           SELECT assistant_user_id FROM pic_assistants
          )
        ORDER BY name`,
-      [session.userId]
+      []
     );
 
     return NextResponse.json({ success: true, assistans, candidates });
@@ -73,6 +73,26 @@ export async function POST(req: Request) {
     );
     if (target.length === 0) {
       return NextResponse.json({ error: "User tidak ditemukan" }, { status: 404 });
+    }
+
+    const existing = await sql.query(
+      "SELECT pic_user_id FROM pic_assistants WHERE assistant_user_id = $1",
+      [assistant_user_id]
+    );
+    if (existing.length > 0 && existing[0].pic_user_id !== session.userId) {
+      return NextResponse.json(
+        {
+          error:
+            "User sudah terdaftar sebagai asisten PIC lain dan tidak bisa diambil lagi",
+        },
+        { status: 409 }
+      );
+    }
+    if (existing.length > 0 && existing[0].pic_user_id === session.userId) {
+      return NextResponse.json({
+        success: true,
+        message: "User sudah menjadi asisten Anda",
+      });
     }
 
     await sql.query(

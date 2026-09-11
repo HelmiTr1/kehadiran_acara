@@ -106,6 +106,49 @@ export async function initDB() {
     END $$
   `);
   await sql.query(`
+    DO $$ BEGIN
+      ALTER TABLE attendance ADD COLUMN IF NOT EXISTS date TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+  `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS divisions (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await sql.query(`
+    INSERT INTO divisions (name) VALUES
+      ('Acara'),
+      ('Logistik'),
+      ('Dokumentasi'),
+      ('Keamanan'),
+      ('Kebersihan'),
+      ('Konsumsi'),
+      ('Humas'),
+      ('Perlengkapan'),
+      ('Sponsorship'),
+      ('IT')
+    ON CONFLICT (name) DO NOTHING
+  `);
+  await sql.query(`
+    DO $$ BEGIN
+      ALTER TABLE events ADD COLUMN IF NOT EXISTS division_id INTEGER REFERENCES divisions(id);
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+  `);
+  await sql.query(`
+    UPDATE attendance
+    SET date = TO_CHAR(created_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD')
+    WHERE date IS NULL OR date = ''
+  `);
+  await sql.query(`
+    UPDATE events
+    SET division_id = (SELECT id FROM divisions WHERE name = 'Acara' LIMIT 1)
+    WHERE division_id IS NULL
+  `);
+  await sql.query(`
     CREATE TABLE IF NOT EXISTS user_events (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,

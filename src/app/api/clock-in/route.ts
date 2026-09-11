@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       }
     }
 
-    if (!division || !token || !event_id) {
+    if (!token || !event_id) {
       return NextResponse.json(
         { error: "Field wajib diisi" },
         { status: 400 }
@@ -35,7 +35,11 @@ export async function POST(req: Request) {
     }
 
     const validToken = await sql.query(
-      "SELECT id, expires_at FROM tokens WHERE token = $1 AND event_id = $2",
+      `SELECT t.id, t.expires_at, d.name AS division_name
+       FROM tokens t
+       JOIN events e ON e.id = t.event_id
+       LEFT JOIN divisions d ON d.id = e.division_id
+       WHERE t.token = $1 AND t.event_id = $2`,
       [token, event_id]
     );
     if (validToken.length === 0) {
@@ -51,25 +55,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const effDivision = validToken[0].division_name || division || "";
+
     const now = new Date();
     const date = now.toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
-
-    const existing = await sql.query(
-      `SELECT id FROM attendance
-       WHERE employee_id = $1 AND event_id = $2 AND date = $3 AND clock_out IS NULL`,
-      [effEmployeeId, event_id, date]
-    );
-    if (existing.length > 0) {
-      return NextResponse.json(
-        { error: "Sudah clock in hari ini untuk event ini" },
-        { status: 409 }
-      );
-    }
 
     const result = await sql.query(
       `INSERT INTO attendance (event_id, user_id, employee_id, employee_name, division, clock_in, task, date)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [event_id, userId, effEmployeeId, effEmployeeName, division, clock_in, task || "", date]
+      [event_id, userId, effEmployeeId, effEmployeeName, effDivision, clock_in, task || "", date]
     );
 
     if (userId) {

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
+import { useToast } from "@/lib/useToast";
+import ToastContainer from "@/components/Toast";
 
 const QrScanner = dynamic(() => import("@/components/QrScanner"), {
   ssr: false,
@@ -15,19 +17,6 @@ const QrScanner = dynamic(() => import("@/components/QrScanner"), {
   ),
 });
 
-const DIVISI_LIST = [
-  "Acara",
-  "Logistik",
-  "Dokumentasi",
-  "Keamanan",
-  "Kebersihan",
-  "Konsumsi",
-  "Humas",
-  "Perlengkapan",
-  "Sponsorship",
-  "IT",
-];
-
 type User = {
   id: number;
   username: string;
@@ -36,17 +25,23 @@ type User = {
   role: string;
 };
 
+type AttendanceSession = {
+  attendance_id: number;
+  clock_in: string;
+  clock_out: string | null;
+  division: string | null;
+  task: string | null;
+  date: string;
+};
+
 type MyEvent = {
   id: number;
   name: string;
   event_date: string;
   location: string;
   description: string;
-  attendance_id: number | null;
-  clock_in: string | null;
-  clock_out: string | null;
-  division: string | null;
-  task: string | null;
+  division_name: string | null;
+  sessions: AttendanceSession[];
   has_attendance: number;
   is_active: number;
 };
@@ -56,21 +51,21 @@ export default function HomePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [myEvents, setMyEvents] = useState<MyEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [entryMode, setEntryMode] = useState<"scan" | "token">("scan");
   const [tokenInput, setTokenInput] = useState("");
   const [scanLoading, setScanLoading] = useState(false);
-  const [scanError, setScanError] = useState("");
   const [scanned, setScanned] = useState<{
-    event: { event_id: number; event_name: string; event_date: string; location: string };
+    event: { event_id: number; event_name: string; event_date: string; location: string; division: string };
     attendance: { id: number; clock_in: string; clock_out: string | null } | null;
     token: string;
   } | null>(null);
   const [division, setDivision] = useState("");
   const [task, setTask] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [currentTime, setCurrentTime] = useState("");
+  const { toasts, success, error, dismiss } = useToast();
 
   useEffect(() => {
     const update = () =>
@@ -100,12 +95,15 @@ export default function HomePage() {
   }, []);
 
   const fetchMyEvents = useCallback(async () => {
+    setLoadingEvents(true);
     try {
       const res = await fetch("/api/my-events");
       const data = await res.json();
       if (data.success) setMyEvents(data.data);
     } catch {
       /* noop */
+    } finally {
+      setLoadingEvents(false);
     }
   }, []);
 
@@ -134,16 +132,13 @@ export default function HomePage() {
     setModalOpen(true);
     setScanned(null);
     setTokenInput("");
-    setScanError("");
     setEntryMode("scan");
-    setMessage(null);
   };
 
   const handleProcessScan = async (value: string) => {
     const qr = value.trim();
     if (!qr) return;
     setScanLoading(true);
-    setScanError("");
     try {
       const res = await fetch("/api/scan", {
         method: "POST",
@@ -152,11 +147,11 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setScanned({ event: data.event, attendance: data.attendance, token: qr });
-      setDivision("");
+      setScanned({ event: data.event, attendance: data.attendance, token: data.token || qr });
+      setDivision(data.event.division || "");
       setTask("");
     } catch (err: unknown) {
-      setScanError(err instanceof Error ? err.message : "Gagal memproses");
+      error(err instanceof Error ? err.message : "Gagal memproses");
     } finally {
       setScanLoading(false);
     }
@@ -167,7 +162,6 @@ export default function HomePage() {
   const handleClockIn = async () => {
     if (!scanned) return;
     setActionLoading(true);
-    setMessage(null);
     try {
       const res = await fetch("/api/clock-in", {
         method: "POST",
@@ -182,12 +176,12 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMessage({ type: "success", text: `Clock in berhasil — ${scanned.event.event_name}` });
+      success(`Clock in berhasil — ${scanned.event.event_name}`);
       setModalOpen(false);
       setScanned(null);
       await fetchMyEvents();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Terjadi kesalahan" });
+      error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       setActionLoading(false);
     }
@@ -196,7 +190,6 @@ export default function HomePage() {
   const handleClockOut = async () => {
     if (!scanned) return;
     setActionLoading(true);
-    setMessage(null);
     try {
       const res = await fetch("/api/clock-out", {
         method: "POST",
@@ -210,12 +203,12 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setMessage({ type: "success", text: `Clock out berhasil — ${scanned.event.event_name}` });
+      success(`Clock out berhasil — ${scanned.event.event_name}`);
       setModalOpen(false);
       setScanned(null);
       await fetchMyEvents();
     } catch (err: unknown) {
-      setMessage({ type: "error", text: err instanceof Error ? err.message : "Terjadi kesalahan" });
+      error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       setActionLoading(false);
     }
@@ -322,18 +315,6 @@ export default function HomePage() {
               </p>
             </button>
 
-            {message && (
-              <div
-                className={`px-4 py-3 rounded-xl text-sm font-medium ${
-                  message.type === "success"
-                    ? "bg-green-500/20 text-green-100 border border-green-400/30"
-                    : "bg-red-500/20 text-red-100 border border-red-400/30"
-                }`}
-              >
-                {message.text}
-              </div>
-            )}
-
             <section>
               <h2 className="text-white font-semibold mb-3 flex items-center gap-2">
                 <span>Event Saya</span>
@@ -344,7 +325,12 @@ export default function HomePage() {
                   muat ulang
                 </button>
               </h2>
-              {myEvents.length === 0 ? (
+              {loadingEvents ? (
+                <div className="bg-white/10 rounded-xl border border-white/10 px-5 py-8 text-center text-blue-100 text-sm">
+                  <div className="inline-block w-5 h-5 border-2 border-blue-200 border-t-transparent rounded-full animate-spin mb-2"></div>
+                  <p>Memuat event...</p>
+                </div>
+              ) : myEvents.length === 0 ? (
                 <div className="bg-white/10 rounded-xl border border-white/10 px-5 py-8 text-center text-blue-100 text-sm">
                   Belum ada event. Scan QR di lokasi event untuk mulai.
                 </div>
@@ -362,6 +348,11 @@ export default function HomePage() {
                             {ev.event_date}
                             {ev.location ? ` — ${ev.location}` : ""}
                           </p>
+                          {ev.division_name && (
+                            <span className="inline-block mt-1 px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                              {ev.division_name}
+                            </span>
+                          )}
                         </div>
                         {Boolean(ev.is_active) ? (
                           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
@@ -378,34 +369,47 @@ export default function HomePage() {
                         )}
                       </div>
                       <div className="flex items-center justify-between mt-3 border-t border-gray-100 pt-3">
-                        <div className="text-xs text-gray-500">
-                          {ev.clock_in && (
-                            <span>
-                              Masuk: <b className="font-mono">{ev.clock_in}</b>
-                            </span>
-                          )}
-                          {ev.clock_out && (
-                            <span className="ml-3">
-                              Pulang: <b className="font-mono">{ev.clock_out}</b>
-                            </span>
-                          )}
-                          {!ev.clock_in && <span>Belum ada data hari ini</span>}
-                        </div>
-                        {!ev.clock_out && ev.has_attendance ? (
+                        {ev.sessions.length > 0 ? (
+                          <div className="text-xs text-gray-500 space-y-0.5">
+                            {ev.sessions.slice(0, 3).map((s) => (
+                              <div key={s.attendance_id}>
+                                <span className="font-mono">{s.date.split("-").slice(1).join("-")}</span>{" "}
+                                <span>
+                                  Masuk: <b className="font-mono">{s.clock_in}</b>
+                                  {s.clock_out ? (
+                                    <>
+                                      {" "}Pulang: <b className="font-mono">{s.clock_out}</b>
+                                    </>
+                                  ) : (
+                                    <span className="text-orange-600 font-medium"> (bekerja)</span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                            {ev.sessions.length > 3 && (
+                              <p className="text-gray-400">+{ev.sessions.length - 3} sesi lainnya</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-500">
+                            Belum ada data
+                          </span>
+                        )}
+                        {Boolean(ev.is_active) ? (
                           <button
                             onClick={openModal}
-                            className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors"
+                            className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-colors shrink-0"
                           >
                             Clock Out
                           </button>
-                        ) : !ev.has_attendance ? (
+                        ) : (
                           <button
                             onClick={openModal}
-                            className="px-3 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-semibold transition-colors"
+                            className="px-3 py-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white text-xs font-semibold transition-colors shrink-0"
                           >
                             Clock In
                           </button>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   ))}
@@ -474,9 +478,7 @@ export default function HomePage() {
                     <QrScanner
                       onResult={handleProcessScan}
                       onError={() =>
-                        setScanError(
-                          "Gagal mengakses kamera. Coba mode 'Masukkan Token'."
-                        )
+                        error("Gagal mengakses kamera. Coba mode 'Masukkan Token'.")
                       }
                     />
                     <p className="text-xs text-gray-400 text-center mt-2">
@@ -501,12 +503,6 @@ export default function HomePage() {
                       Token 6 digit dari PIC, berlaku 5 menit.
                     </p>
                   </div>
-                )}
-
-                {scanError && (
-                  <p className="text-red-500 text-sm mt-2 text-center">
-                    {scanError}
-                  </p>
                 )}
 
                 {entryMode === "token" && (
@@ -584,18 +580,11 @@ export default function HomePage() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Divisi
                       </label>
-                      <select
-                        value={division}
-                        onChange={(e) => setDivision(e.target.value)}
-                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-white text-gray-900"
-                      >
-                        <option value="">Pilih divisi</option>
-                        {DIVISI_LIST.map((d) => (
-                          <option key={d} value={d}>
-                            {d}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm">
+                        {division || (
+                          <span className="text-gray-400 italic">Tidak ada divisi</span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -610,7 +599,7 @@ export default function HomePage() {
                     </div>
                     <button
                       onClick={handleClockIn}
-                      disabled={actionLoading || !division}
+                      disabled={actionLoading}
                       className="w-full py-3 rounded-xl font-semibold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 transition-all"
                     >
                       {actionLoading ? "Memproses..." : "Clock In Sekarang"}
@@ -622,7 +611,6 @@ export default function HomePage() {
                   onClick={() => {
                     setScanned(null);
                     setTokenInput("");
-                    setScanError("");
                     setEntryMode("scan");
                   }}
                   className="w-full mt-3 text-sm text-blue-600 hover:underline"
@@ -634,6 +622,8 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </main>
   );
 }

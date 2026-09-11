@@ -33,9 +33,11 @@ export async function POST(req: Request) {
     const params: string[] = [token];
     let query = `
       SELECT t.id AS token_id, t.event_id, t.expires_at,
-             e.name AS event_name, e.event_date, e.location
+             e.name AS event_name, e.event_date, e.location,
+             d.name AS division_name
       FROM tokens t
       JOIN events e ON e.id = t.event_id
+      LEFT JOIN divisions d ON d.id = e.division_id
       WHERE t.token = $1
     `;
     if (eventId) {
@@ -83,7 +85,9 @@ export async function POST(req: Request) {
         event_name: row.event_name,
         event_date: row.event_date,
         location: row.location,
+        division: row.division_name || "",
       },
+      token,
       attendance: att[0] || null,
     });
   } catch (error) {
