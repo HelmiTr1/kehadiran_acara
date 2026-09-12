@@ -635,12 +635,15 @@ export default function DashboardPage() {
     if (!clockOut) return "-";
     const [inH, inM, inS] = clockIn.split(":").map(Number);
     const [outH, outM, outS] = clockOut.split(":").map(Number);
+    const crossed =
+      outH * 3600 + outM * 60 + outS < inH * 3600 + inM * 60 + inS;
     const diff =
-      outH * 3600 + outM * 60 + outS - (inH * 3600 + inM * 60 + inS);
-    if (diff < 0) return "-";
+      outH * 3600 + outM * 60 + outS -
+      (inH * 3600 + inM * 60 + inS) +
+      (crossed ? 24 * 3600 : 0);
     const h = Math.floor(diff / 3600);
     const m = Math.floor((diff % 3600) / 60);
-    return `${h}j ${m}m`;
+    return `${h}j ${m}m${crossed ? " (+1hr)" : ""}`;
   };
 
   const formatCountdown = (seconds: number) => {

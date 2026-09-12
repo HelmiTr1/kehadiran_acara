@@ -139,11 +139,18 @@ export async function PATCH(req: Request) {
         ? newClockOut
         : record.clock_out || null;
 
-    if (finalOut !== null && finalIn > finalOut) {
-      return NextResponse.json(
-        { error: "Jam pulang tidak boleh lebih awal dari jam masuk" },
-        { status: 400 }
-      );
+    if (finalOut !== null) {
+      const [inH, inM, inS] = finalIn.split(":").map(Number);
+      const [outH, outM, outS] = finalOut.split(":").map(Number);
+      const clockedIn = inH * 3600 + inM * 60 + (inS || 0);
+      const clockedOut = outH * 3600 + outM * 60 + (outS || 0);
+      const diff = clockedOut - clockedIn + (clockedOut < clockedIn ? 24 * 3600 : 0);
+      if (diff <= 0 || diff > 24 * 3600) {
+        return NextResponse.json(
+          { error: "Rentang jam pulang - jam masuk tidak valid (maks 24 jam)" },
+          { status: 400 }
+        );
+      }
     }
 
     await sql.query(

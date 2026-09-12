@@ -8,7 +8,7 @@ export async function POST(req: Request) {
     await initDB();
     const sql = getSql();
     const body = await req.json();
-    const { employee_id, clock_out, task, token, event_id, date: clientDate } = body;
+    const { employee_id, clock_out, task, token, event_id } = body;
 
     const session = await getSession();
     let effEmployeeId = employee_id;
@@ -47,16 +47,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const now = new Date();
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(clientDate || "")
-      ? clientDate
-      : now.toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
-
     const existing = await sql.query(
       `SELECT id, task AS existing_task FROM attendance
-       WHERE employee_id = $1 AND event_id = $2 AND date = $3 AND clock_out IS NULL
+       WHERE employee_id = $1 AND event_id = $2 AND clock_out IS NULL
        ORDER BY id DESC LIMIT 1`,
-      [effEmployeeId, event_id, date]
+      [effEmployeeId, event_id]
     );
     if (existing.length === 0) {
       return NextResponse.json(
