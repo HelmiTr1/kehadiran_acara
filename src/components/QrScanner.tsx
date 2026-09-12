@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 type FacingMode = "environment" | "user";
 
-export default function QrScanner({
+export default memo(function QrScanner({
   onResult,
   onError,
 }: {
@@ -112,11 +112,12 @@ export default function QrScanner({
 
   return (
     <div className="space-y-2">
-      <div
-        ref={containerRef}
-        id={`qr-reader-region-${facingMode}`}
-        className="w-full rounded-xl overflow-hidden bg-black min-h-[220px] flex items-center justify-center text-white/60 text-sm relative"
-      >
+      <div className="relative">
+        <div
+          ref={containerRef}
+          id={`qr-reader-region-${facingMode}`}
+          className="w-full rounded-xl overflow-hidden bg-black min-h-[220px]"
+        />
         {initializing && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 text-white">
             <div className="inline-block w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
@@ -151,4 +152,4 @@ export default function QrScanner({
       </button>
     </div>
   );
-}
+});

@@ -126,12 +126,15 @@ export default function HomePage() {
       second: "2-digit",
     });
 
-  const getLocalDate = () =>
-    new Date().toLocaleDateString("sv-SE", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
+  const getLocalDate = useCallback(
+    () =>
+      new Date().toLocaleDateString("sv-SE", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }),
+    []
+  );
 
   const openModal = () => {
     setModalOpen(true);
@@ -140,27 +143,34 @@ export default function HomePage() {
     setEntryMode("scan");
   };
 
-  const handleProcessScan = async (value: string) => {
-    const qr = value.trim();
-    if (!qr) return;
-    setScanLoading(true);
-    try {
-      const res = await fetch("/api/scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qr, date: getLocalDate() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setScanned({ event: data.event, attendance: data.attendance, token: data.token || qr });
-      setDivision(data.event.division || "");
-      setTask("");
-    } catch (err: unknown) {
-      error(err instanceof Error ? err.message : "Gagal memproses");
-    } finally {
-      setScanLoading(false);
-    }
-  };
+  const handleProcessScan = useCallback(
+    async (value: string) => {
+      const qr = value.trim();
+      if (!qr) return;
+      setScanLoading(true);
+      try {
+        const res = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ qr, date: getLocalDate() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        setScanned({ event: data.event, attendance: data.attendance, token: data.token || qr });
+        setDivision(data.event.division || "");
+        setTask("");
+      } catch (err: unknown) {
+        error(err instanceof Error ? err.message : "Gagal memproses");
+      } finally {
+        setScanLoading(false);
+      }
+    },
+    [error, getLocalDate]
+  );
+
+  const handleScanError = useCallback(() => {
+    error("Gagal mengakses kamera. Coba mode 'Masukkan Token'.");
+  }, [error]);
 
   const handleSubmitToken = () => handleProcessScan(tokenInput);
 
@@ -497,9 +507,7 @@ export default function HomePage() {
                     )}
                     <QrScanner
                       onResult={handleProcessScan}
-                      onError={() =>
-                        error("Gagal mengakses kamera. Coba mode 'Masukkan Token'.")
-                      }
+                      onError={handleScanError}
                     />
                     <p className="text-xs text-gray-400 text-center mt-2">
                       Arahkan kamera ke QR code yang ditampilkan PIC di lokasi

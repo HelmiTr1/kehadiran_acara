@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getClientIp } from "@/lib/ip";
 
 export async function POST(req: Request) {
   try {
@@ -63,9 +64,9 @@ export async function POST(req: Request) {
       : now.toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
 
     const result = await sql.query(
-      `INSERT INTO attendance (event_id, user_id, employee_id, employee_name, division, clock_in, task, date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [event_id, userId, effEmployeeId, effEmployeeName, effDivision, clock_in, task || "", date]
+      `INSERT INTO attendance (event_id, user_id, employee_id, employee_name, division, clock_in, task, date, ip)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [event_id, userId, effEmployeeId, effEmployeeName, effDivision, clock_in, task || "", date, getClientIp(req)]
     );
 
     if (userId) {

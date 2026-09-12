@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { getClientIp } from "@/lib/ip";
 
 export async function POST(req: Request) {
   try {
@@ -68,8 +69,8 @@ export async function POST(req: Request) {
     const updateTask = task || row.existing_task;
 
     await sql.query(
-      "UPDATE attendance SET clock_out = $1, task = $2 WHERE id = $3",
-      [clock_out, updateTask, row.id]
+      "UPDATE attendance SET clock_out = $1, task = $2, ip = $3 WHERE id = $4",
+      [clock_out, updateTask, getClientIp(req), row.id]
     );
 
     return NextResponse.json({

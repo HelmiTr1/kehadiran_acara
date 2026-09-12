@@ -44,6 +44,7 @@ interface Attendance {
   clock_out: string | null;
   task: string;
   date: string;
+  ip: string;
   pic_name: string;
 }
 
@@ -586,6 +587,7 @@ export default function DashboardPage() {
       "Jam Pulang": r.clock_out || "",
       Durasi: formatDuration(r.clock_in, r.clock_out),
       Status: r.clock_out ? "Selesai" : "Bekerja",
+      IP: r.ip || "",
       Tugas: r.task || "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
@@ -599,6 +601,7 @@ export default function DashboardPage() {
       { wch: 10 },
       { wch: 10 },
       { wch: 10 },
+      { wch: 15 },
       { wch: 30 },
     ];
     const wb = XLSX.utils.book_new();
@@ -1061,6 +1064,9 @@ export default function DashboardPage() {
                                     Status
                                   </th>
                                   <th className="text-left px-4 py-2 font-semibold text-gray-600">
+                                    IP
+                                  </th>
+                                  <th className="text-left px-4 py-2 font-semibold text-gray-600">
                                     Tugas
                                   </th>
                                 </tr>
@@ -1107,6 +1113,9 @@ export default function DashboardPage() {
                                           Bekerja
                                         </span>
                                       )}
+                                    </td>
+                                    <td className="px-4 py-2.5 font-mono text-gray-500">
+                                      {r.ip || "-"}
                                     </td>
                                     <td className="px-4 py-2.5 text-gray-600 max-w-xs truncate">
                                       {r.task || "-"}

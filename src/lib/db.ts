@@ -108,6 +108,7 @@ async function _initDB() {
       clock_out TEXT,
       task TEXT,
       date TEXT NOT NULL,
+      ip TEXT DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -120,6 +121,12 @@ async function _initDB() {
   await sql.query(`
     DO $$ BEGIN
       ALTER TABLE attendance ADD COLUMN IF NOT EXISTS date TEXT;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$
+  `);
+  await sql.query(`
+    DO $$ BEGIN
+      ALTER TABLE attendance ADD COLUMN IF NOT EXISTS ip TEXT DEFAULT '';
     EXCEPTION WHEN duplicate_column THEN NULL;
     END $$
   `);
