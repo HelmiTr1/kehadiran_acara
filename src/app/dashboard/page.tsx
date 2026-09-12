@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -78,7 +78,24 @@ interface Division {
   total_events: number;
 }
 
-type Tab = "events" | "asisten" | "users" | "divisi";
+type Tab = "events" | "asisten" | "users" | "divisi" | "rekap";
+
+interface SummaryUser {
+  employee_id: string;
+  employee_name: string;
+  division: string;
+  event_count: number;
+  total_seconds: number;
+  active_count: number;
+  events: {
+    event_id: number;
+    event_name: string;
+    event_date: string;
+    clock_ins: number;
+    clock_outs: number;
+    seconds: number;
+  }[];
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -97,6 +114,9 @@ export default function DashboardPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [asistenLoading, setAsistenLoading] = useState(false);
   const [divisionsLoading, setDivisionsLoading] = useState(false);
+  const [summaryData, setSummaryData] = useState<SummaryUser[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEvent, setNewEvent] = useState({
@@ -253,6 +273,19 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchSummary = useCallback(async () => {
+    setSummaryLoading(true);
+    try {
+      const res = await fetch("/api/summary");
+      const data = await res.json();
+      if (data.success) setSummaryData(data.data);
+    } catch {
+      /* noop */
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     Promise.all([fetchUser(), fetchEvents()]).then(() => setLoading(false));
     fetchDivisions();
@@ -270,7 +303,8 @@ export default function DashboardPage() {
     if (activeTab === "asisten") fetchAsisten();
     if (activeTab === "users") fetchUsers();
     if (activeTab === "divisi") fetchDivisions();
-  }, [activeTab, fetchAsisten, fetchUsers, fetchDivisions]);
+    if (activeTab === "rekap") fetchSummary();
+  }, [activeTab, fetchAsisten, fetchUsers, fetchDivisions, fetchSummary]);
 
   useOnAuthLogout(() => {
     setUser(null);
@@ -670,6 +704,15 @@ export default function DashboardPage() {
     return `${h}j ${m}m${crossed ? " (+1hr)" : ""}`;
   };
 
+  const formatHours = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.round(seconds % 60);
+    if (h === 0 && m === 0) return `${s}dtk`;
+    if (h === 0) return `${m}m ${s}dtk`;
+    return `${h}j ${m}m`;
+  };
+
   const formatCountdown = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -798,6 +841,18 @@ export default function DashboardPage() {
                 }`}
               >
                 Asisten
+              </button>
+            )}
+            {(user?.role === "pic" || user?.role === "admin") && (
+              <button
+                onClick={() => setActiveTab("rekap")}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === "rekap"
+                    ? "bg-white text-blue-700"
+                    : "text-blue-100 hover:bg-white/10"
+                }`}
+              >
+                Rekap Jam
               </button>
             )}
             {user?.role === "admin" && (
@@ -1281,6 +1336,126 @@ export default function DashboardPage() {
               </div>
             )}
           </>
+        )}
+
+        {activeTab === "rekap" && (
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Total Jam Kerja per User
+              </h2>
+              <p className="text-xs text-gray-400">
+                Durasi dijumlah otomatis lintas semua event (termasuk lintas
+                tengah malam).
+              </p>
+            </div>
+            {summaryLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex flex-col items-center gap-3 text-gray-400">
+                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-sm">Menghitung rekap...</p>
+                </div>
+              </div>
+            ) : summaryData.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm py-8">
+                Belum ada data kehadiran.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600">#</th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600">ID Karyawan</th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600">Nama</th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600">Divisi</th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600">Event</th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600">Total Jam</th>
+                      {user?.role === "admin" && (
+                        <th className="text-left px-4 py-2 font-semibold text-gray-600">Rincian</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {summaryData.map((u, i) => (
+                      <Fragment key={u.employee_id}>
+                        <tr key={u.employee_id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-2.5 text-gray-500">{i + 1}</td>
+                          <td className="px-4 py-2.5 font-mono font-medium text-gray-900">
+                            {u.employee_id}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-900">
+                            {u.employee_name}
+                            {u.active_count > 0 && (
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                {u.active_count} bekerja
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              {u.division || "-"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600">
+                            {u.event_count} event
+                          </td>
+                          <td className="px-4 py-2.5 font-semibold text-gray-900">
+                            {formatHours(u.total_seconds)}
+                          </td>
+                          {user?.role === "admin" && (
+                            <td className="px-4 py-2.5">
+                              <button
+                                onClick={() =>
+                                  setExpandedUser(
+                                    expandedUser === u.employee_id
+                                      ? null
+                                      : u.employee_id
+                                  )
+                                }
+                                className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors"
+                              >
+                                {expandedUser === u.employee_id ? "Tutup" : "Detail"}
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                        {expandedUser === u.employee_id && user?.role === "admin" && (
+                          <tr key={`${u.employee_id}-detail`} className="bg-gray-50">
+                            <td colSpan={7} className="px-4 py-3">
+                              <div className="space-y-1.5">
+                                {u.events.map((e) => (
+                                  <div
+                                    key={e.event_id}
+                                    className="flex items-center justify-between bg-white rounded-lg px-3 py-2 text-xs"
+                                  >
+                                    <div>
+                                      <span className="font-medium text-gray-800">
+                                        {e.event_name}
+                                      </span>
+                                      <span className="text-gray-400 ml-2">
+                                        {e.event_date}
+                                      </span>
+                                    </div>
+                                    <div className="text-gray-600">
+                                      {e.clock_ins}x ({e.clock_outs} selesai) —{" "}
+                                      <b className="text-gray-900">
+                                        {formatHours(e.seconds)}
+                                      </b>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
         {activeTab === "asisten" && (
