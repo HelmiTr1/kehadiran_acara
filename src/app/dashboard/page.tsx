@@ -166,6 +166,10 @@ export default function DashboardPage() {
         router.push("/login");
         return;
       }
+      if (data.user?.role === "user") {
+        router.replace("/");
+        return;
+      }
       setUser(data.user);
     } catch {
       router.push("/login");

@@ -9,32 +9,25 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const sessionCookie = request.cookies.get("session")?.value;
 
-  let session: { role?: string } | null = null;
+  let loggedIn = false;
+  let jwtRole: string | undefined;
   if (sessionCookie) {
     try {
       const { payload } = await jwtVerify(sessionCookie, JWT_SECRET);
-      session = payload as { role?: string };
+      loggedIn = true;
+      jwtRole = payload.role as string | undefined;
     } catch {
-      session = null;
+      loggedIn = false;
     }
   }
 
-  if (pathname.startsWith("/login") && session) {
-    const target = session.role === "user" ? "/" : "/dashboard";
+  if (pathname.startsWith("/login") && loggedIn) {
+    const target = jwtRole === "user" ? "/" : "/dashboard";
     return NextResponse.redirect(new URL(target, request.url));
   }
 
-  if (pathname === "/" && !session) {
+  if (!/^\/api\//.test(pathname) && !pathname.startsWith("/login") && !loggedIn) {
     return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  if (pathname.startsWith("/dashboard")) {
-    if (!session) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-    if (session.role === "user") {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
   }
 
   return NextResponse.next();
