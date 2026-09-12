@@ -102,7 +102,7 @@ export async function PATCH(req: Request) {
 
   await initDB();
   const sql = getSql();
-  const { id, name, event_date, location, description, division_id } = await req.json();
+  const { id, name, event_date, location, description, division_id, user_id } = await req.json();
 
   if (!id) {
     return NextResponse.json({ error: "ID event wajib diisi" }, { status: 400 });
@@ -122,20 +122,41 @@ export async function PATCH(req: Request) {
     );
   }
 
+  if (user_id !== undefined) {
+    if (!isAdmin) {
+      return NextResponse.json(
+        { error: "Hanya admin yang bisa mengganti PIC event" },
+        { status: 403 }
+      );
+    }
+    const newPic = await sql.query(
+      "SELECT id FROM users WHERE id = $1 AND role = 'pic'",
+      [user_id]
+    );
+    if (newPic.length === 0) {
+      return NextResponse.json(
+        { error: "PIC yang dipilih tidak valid" },
+        { status: 400 }
+      );
+    }
+  }
+
   const nameVal = name ?? target[0].name;
   if (!nameVal) {
     return NextResponse.json({ error: "Nama event wajib diisi" }, { status: 400 });
   }
 
   await sql.query(
-    `UPDATE events SET name = $1, event_date = $2, location = $3, description = $4, division_id = $5
-     WHERE id = $6`,
+    `UPDATE events SET name = $1, event_date = $2, location = $3, description = $4,
+            division_id = $5, user_id = COALESCE($6, user_id)
+     WHERE id = $7`,
     [
       nameVal,
       event_date ?? target[0].event_date,
       location ?? target[0].location,
       description ?? target[0].description,
       division_id ?? null,
+      user_id !== undefined ? Number(user_id) : null,
       id,
     ]
   );

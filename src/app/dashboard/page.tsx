@@ -126,6 +126,7 @@ export default function DashboardPage() {
     location: "",
     description: "",
     division_id: "" as string,
+    pic_id: "" as string,
   });
   const [editEventLoading, setEditEventLoading] = useState(false);
 
@@ -133,6 +134,7 @@ export default function DashboardPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
 
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [pics, setPics] = useState<AdminUser[]>([]);
   const [roleDraft, setRoleDraft] = useState<Record<number, string>>({});
   const [roleSaving, setRoleSaving] = useState<number | null>(null);
   const [deletingUser, setDeletingUser] = useState<number | null>(null);
@@ -224,6 +226,16 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchPics = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users?role=pic");
+      const data = await res.json();
+      if (data.success) setPics(data.data);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
   const fetchDivisions = useCallback(async () => {
     setDivisionsLoading(true);
     try {
@@ -241,6 +253,10 @@ export default function DashboardPage() {
     Promise.all([fetchUser(), fetchEvents()]).then(() => setLoading(false));
     fetchDivisions();
   }, [fetchUser, fetchEvents, fetchDivisions]);
+
+  useEffect(() => {
+    if (user?.role === "admin") fetchPics();
+  }, [user, fetchPics]);
 
   useEffect(() => {
     if (selectedEventId) fetchRecords(selectedEventId);
@@ -523,6 +539,9 @@ export default function DashboardPage() {
           division_id: editEventData.division_id
             ? Number(editEventData.division_id)
             : null,
+          user_id: user?.role === "admin" && editEventData.pic_id
+            ? Number(editEventData.pic_id)
+            : undefined,
         }),
       });
       const data = await res.json();
@@ -545,6 +564,7 @@ export default function DashboardPage() {
       location: ev.location,
       description: ev.description,
       division_id: ev.division_id ? String(ev.division_id) : "",
+      pic_id: ev.user_id ? String(ev.user_id) : "",
     });
   };
 
@@ -1678,6 +1698,29 @@ export default function DashboardPage() {
                   ))}
                 </select>
               </div>
+              {user?.role === "admin" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    PIC (Transfer / Ganti)
+                  </label>
+                  <select
+                    value={editEventData.pic_id}
+                    onChange={(e) => setEditEventData({ ...editEventData, pic_id: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                  >
+                    <option value="">Pilih PIC</option>
+                    {pics.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.employee_id ? ` (${p.employee_id})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Pilih PIC lain untuk mentransfer event ini ke PIC baru (hanya admin).
+                  </p>
+                </div>
+              )}
               <div className="flex gap-2 pt-2">
                 <button
                   type="submit"

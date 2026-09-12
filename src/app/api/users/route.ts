@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await getSession();
     if (!session) {
@@ -17,13 +17,22 @@ export async function GET() {
 
     await initDB();
     const sql = getSql();
+    const { searchParams } = new URL(req.url);
+    const roleFilter = searchParams.get("role");
 
-    const users = await sql.query(
-      `SELECT u.id, u.username, u.employee_id, u.name, u.role, u.created_at,
-              (SELECT COUNT(*)::int FROM events e WHERE e.user_id = u.id) AS total_events
-       FROM users u
-       ORDER BY u.created_at ASC`
-    );
+    let query = `
+      SELECT u.id, u.username, u.employee_id, u.name, u.role, u.created_at,
+             (SELECT COUNT(*)::int FROM events e WHERE e.user_id = u.id) AS total_events
+      FROM users u
+    `;
+    const args: string[] = [];
+    if (roleFilter) {
+      args.push(roleFilter);
+      query += ` WHERE u.role = $1`;
+    }
+    query += " ORDER BY u.created_at ASC";
+
+    const users = await sql.query(query, args);
 
     return NextResponse.json({ success: true, data: users });
   } catch (error) {
