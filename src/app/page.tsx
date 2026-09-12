@@ -137,6 +137,21 @@ export default function HomePage() {
     []
   );
 
+  const formatDuration = (clockIn: string, clockOut: string | null) => {
+    if (!clockOut) return null;
+    const [inH, inM, inS] = clockIn.split(":").map(Number);
+    const [outH, outM, outS] = clockOut.split(":").map(Number);
+    const crossed =
+      outH * 3600 + outM * 60 + outS < inH * 3600 + inM * 60 + inS;
+    const diff =
+      outH * 3600 + outM * 60 + outS -
+      (inH * 3600 + inM * 60 + inS) +
+      (crossed ? 24 * 3600 : 0);
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    return `${h}j ${m}m${crossed ? " (+1hr)" : ""}`;
+  };
+
   const openModal = () => {
     setModalOpen(true);
     setScanned(null);
@@ -411,10 +426,20 @@ export default function HomePage() {
                                     <span className="text-orange-600 font-medium"> (bekerja)</span>
                                   )}
                                 </span>
+                                {formatDuration(s.clock_in, s.clock_out) && (
+                                  <span className="inline-flex items-center ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    {formatDuration(s.clock_in, s.clock_out)}
+                                  </span>
+                                )}
                               </div>
                             ))}
                             {ev.sessions.length > 3 && (
                               <p className="text-gray-400">+{ev.sessions.length - 3} sesi lainnya</p>
+                            )}
+                            {ev.sessions.filter((s) => !s.clock_out).length > 0 && (
+                              <p className="text-orange-600 font-medium">
+                                {ev.sessions.filter((s) => !s.clock_out).length} sesi masih bekerja
+                              </p>
                             )}
                           </div>
                         ) : (

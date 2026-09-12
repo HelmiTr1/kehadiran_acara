@@ -1,13 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useToast } from "@/lib/useToast";
 import ToastContainer from "@/components/Toast";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [isRegister, setIsRegister] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -24,12 +22,12 @@ export default function LoginPage() {
         if (!res.ok) return;
         const data = await res.json();
         const target = data.user?.role === "user" ? "/" : "/dashboard";
-        router.replace(target);
+        window.location.replace(target);
       } catch {
         /* noop */
       }
     })();
-  }, [router]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +62,7 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error);
       success(isRegister ? "Registrasi berhasil" : "Login berhasil");
       const target = data.role === "user" ? "/" : "/dashboard";
-      router.push(target);
+      window.location.assign(target);
     } catch (err: unknown) {
       error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {

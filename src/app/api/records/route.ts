@@ -32,6 +32,13 @@ export async function GET(req: Request) {
     const event_id = searchParams.get("event_id");
     const employee_id = searchParams.get("employee_id");
 
+    if (session.role === "asisten") {
+      return NextResponse.json(
+        { error: "Hanya PIC dan Admin yang bisa melihat rekap kehadiran" },
+        { status: 403 }
+      );
+    }
+
     let query = `
       SELECT a.*, e.name AS event_name, e.event_date, u.name AS pic_name
       FROM attendance a
@@ -42,15 +49,7 @@ export async function GET(req: Request) {
     const args: string[] = [];
 
     if (session.role !== "admin") {
-      if (session.role === "asisten") {
-        args.push(String(session.userId));
-        query += ` AND (
-          e.user_id = $${args.length}
-          OR e.user_id IN (
-            SELECT pic_user_id FROM pic_assistants WHERE assistant_user_id = $${args.length}
-          )
-        )`;
-      } else if (session.role === "pic") {
+      if (session.role === "pic") {
         args.push(String(session.userId));
         query += ` AND e.user_id = $${args.length}`;
       } else {

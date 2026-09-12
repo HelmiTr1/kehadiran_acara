@@ -259,8 +259,8 @@ export default function DashboardPage() {
   }, [user, fetchPics]);
 
   useEffect(() => {
-    if (selectedEventId) fetchRecords(selectedEventId);
-  }, [selectedEventId, fetchRecords]);
+    if (selectedEventId && user?.role !== "asisten") fetchRecords(selectedEventId);
+  }, [selectedEventId, user?.role, fetchRecords]);
 
   useEffect(() => {
     if (activeTab === "asisten") fetchAsisten();
@@ -1088,6 +1088,7 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex items-center justify-between">
+                      {user?.role !== "asisten" && (
                       <button
                         onClick={() =>
                           setSelectedEventId(
@@ -1100,7 +1101,8 @@ export default function DashboardPage() {
                           ? "Sembunyikan Kehadiran"
                           : "Lihat Kehadiran"}
                       </button>
-                      {selectedEventId === ev.id && records.length > 0 && (
+                    )}
+                    {selectedEventId === ev.id && records.length > 0 && user?.role !== "asisten" && (
                         <button
                           onClick={() => handleExportExcel(ev.id)}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-medium rounded-lg transition-colors"
@@ -1113,7 +1115,7 @@ export default function DashboardPage() {
                       )}
                     </div>
 
-                    {selectedEventId === ev.id && (
+                    {selectedEventId === ev.id && user?.role !== "asisten" && (
                       <div className="border-t border-gray-100">
                         <div className="grid grid-cols-3 gap-4 p-4 bg-gray-50">
                           <div className="bg-white rounded-lg p-3 text-center shadow-sm">
