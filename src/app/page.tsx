@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -64,6 +64,7 @@ export default function HomePage() {
   const [division, setDivision] = useState("");
   const [task, setTask] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const actionLockedRef = useRef(false);
   const [currentTime, setCurrentTime] = useState("");
   const { toasts, success, error, dismiss } = useToast();
 
@@ -175,7 +176,8 @@ export default function HomePage() {
   const handleSubmitToken = () => handleProcessScan(tokenInput);
 
   const handleClockIn = async () => {
-    if (!scanned) return;
+    if (!scanned || actionLockedRef.current) return;
+    actionLockedRef.current = true;
     setActionLoading(true);
     try {
       const res = await fetch("/api/clock-in", {
@@ -199,12 +201,14 @@ export default function HomePage() {
     } catch (err: unknown) {
       error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
+      actionLockedRef.current = false;
       setActionLoading(false);
     }
   };
 
   const handleClockOut = async () => {
-    if (!scanned) return;
+    if (!scanned || actionLockedRef.current) return;
+    actionLockedRef.current = true;
     setActionLoading(true);
     try {
       const res = await fetch("/api/clock-out", {
@@ -227,6 +231,7 @@ export default function HomePage() {
     } catch (err: unknown) {
       error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
+      actionLockedRef.current = false;
       setActionLoading(false);
     }
   };

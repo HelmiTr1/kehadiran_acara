@@ -58,6 +58,26 @@ export async function POST(req: Request) {
 
     const effDivision = validToken[0].division_name || division || "";
 
+    const dup = await sql.query(
+      `SELECT id, clock_in, created_at FROM attendance
+       WHERE employee_id = $1 AND event_id = $2
+       ORDER BY id DESC LIMIT 1`,
+      [effEmployeeId, event_id]
+    );
+    if (dup.length > 0) {
+      const lastCreated = new Date(dup[0].created_at).getTime();
+      const gapSec = (Date.now() - lastCreated) / 1000;
+      if (gapSec >= 0 && gapSec < 60) {
+        return NextResponse.json(
+          {
+            error: `Terdeteksi clock in ganda ${Math.max(0, Math.ceil(60 - gapSec))} detik lalu. Tolong tunggu sebentar jika ini bukan disengaja.`,
+            duplicate_id: dup[0].id,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const now = new Date();
     const date = /^\d{4}-\d{2}-\d{2}$/.test(clientDate || "")
       ? clientDate
