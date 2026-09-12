@@ -21,6 +21,7 @@ export default function QrScanner({
 
   const [facingMode, setFacingMode] = useState<FacingMode>("environment");
   const [cameraError, setCameraError] = useState("");
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +85,8 @@ export default function QrScanner({
             : "Gagal mengakses kamera. Coba mode 'Masukkan Token'."
         );
         onErrorRef.current?.(error);
+      } finally {
+        if (!cancelled) setInitializing(false);
       }
     }
 
@@ -103,6 +106,7 @@ export default function QrScanner({
 
   const handleToggle = () => {
     setCameraError("");
+    setInitializing(true);
     setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
   };
 
@@ -111,8 +115,15 @@ export default function QrScanner({
       <div
         ref={containerRef}
         id={`qr-reader-region-${facingMode}`}
-        className="w-full rounded-xl overflow-hidden bg-black min-h-[220px] flex items-center justify-center text-white/60 text-sm"
-      />
+        className="w-full rounded-xl overflow-hidden bg-black min-h-[220px] flex items-center justify-center text-white/60 text-sm relative"
+      >
+        {initializing && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/60 text-white">
+            <div className="inline-block w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-sm">Membuka kamera...</p>
+          </div>
+        )}
+      </div>
       {cameraError && (
         <p className="text-red-500 text-xs text-center">{cameraError}</p>
       )}

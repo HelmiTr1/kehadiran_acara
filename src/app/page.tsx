@@ -277,7 +277,12 @@ export default function HomePage() {
           </p>
         </div>
 
-        {!user && !loadingUser && (
+        {loadingUser ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-center">
+            <div className="inline-block w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-blue-100 text-sm">Memuat...</p>
+          </div>
+        ) : !user && (
           <div className="bg-white rounded-2xl shadow-2xl p-6 text-center">
             <p className="text-gray-700 font-medium mb-1">Belum login?</p>
             <p className="text-sm text-gray-500 mb-4">
@@ -481,7 +486,15 @@ export default function HomePage() {
                 </div>
 
                 {entryMode === "scan" ? (
-                  <>
+                  <div className="relative">
+                    {scanLoading && (
+                      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-white/90">
+                        <div className="inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                        <p className="text-sm font-medium text-gray-700">
+                          Memverifikasi QR...
+                        </p>
+                      </div>
+                    )}
                     <QrScanner
                       onResult={handleProcessScan}
                       onError={() =>
@@ -492,7 +505,7 @@ export default function HomePage() {
                       Arahkan kamera ke QR code yang ditampilkan PIC di lokasi
                       event.
                     </p>
-                  </>
+                  </div>
                 ) : (
                   <div>
                     <input
@@ -520,11 +533,6 @@ export default function HomePage() {
                   >
                     {scanLoading ? "Memverifikasi..." : "Verifikasi Token"}
                   </button>
-                )}
-                {entryMode === "scan" && scanLoading && (
-                  <p className="text-center text-sm text-gray-500 mt-3">
-                    Memverifikasi QR...
-                  </p>
                 )}
               </div>
             ) : (
