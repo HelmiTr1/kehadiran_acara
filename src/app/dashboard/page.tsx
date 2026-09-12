@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
 import { useToast } from "@/lib/useToast";
 import ToastContainer from "@/components/Toast";
+import ConfirmModal from "@/components/ConfirmModal";
 
 const QrDisplay = dynamic(() => import("@/components/QrDisplay"), {
   ssr: false,
@@ -142,6 +143,17 @@ export default function DashboardPage() {
   } | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    message: React.ReactNode;
+    confirmLabel: string;
+    action: () => void;
+  } | null>(null);
+  const [editRecord, setEditRecord] = useState<Attendance | null>(null);
+  const [editClockIn, setEditClockIn] = useState("");
+  const [editClockOut, setEditClockOut] = useState("");
+  const [recordSaving, setRecordSaving] = useState(false);
+  const [deletingRecord, setDeletingRecord] = useState<number | null>(null);
   const { toasts, success, error, dismiss } = useToast();
 
   const fetchUser = useCallback(async () => {
@@ -415,7 +427,6 @@ export default function DashboardPage() {
   };
 
   const handleDeleteUser = async (userId: number) => {
-    if (!window.confirm("Yakin ingin menghapus user ini? Semua data terkait akan ikut terhapus.")) return;
     setDeletingUser(userId);
     try {
       const res = await fetch("/api/users", {
@@ -480,7 +491,6 @@ export default function DashboardPage() {
   };
 
   const handleDeleteDivision = async (id: number) => {
-    if (!window.confirm("Yakin ingin menghapus divisi ini?")) return;
     try {
       const res = await fetch("/api/divisions", {
         method: "DELETE",
@@ -539,7 +549,6 @@ export default function DashboardPage() {
   };
 
   const handleDeleteEvent = async (ev: Event) => {
-    if (!window.confirm(`Yakin ingin menghapus event "${ev.name}"? Semua kehadiran terkait akan ikut terhapus.`)) return;
     try {
       const res = await fetch("/api/events", {
         method: "DELETE",
@@ -554,6 +563,72 @@ export default function DashboardPage() {
     } catch (err: unknown) {
       error(err instanceof Error ? err.message : "Gagal menghapus event");
     }
+  };
+
+  const openEditRecord = (r: Attendance) => {
+    setEditRecord(r);
+    setEditClockIn(r.clock_in);
+    setEditClockOut(r.clock_out || "");
+  };
+
+  const handleUpdateRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editRecord) return;
+    setRecordSaving(true);
+    try {
+      const res = await fetch("/api/records", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editRecord.id,
+          clock_in: editClockIn,
+          clock_out: editClockOut,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Jam kehadiran berhasil diperbarui");
+      setEditRecord(null);
+      if (selectedEventId) await fetchRecords(selectedEventId);
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal memperbarui jam");
+    } finally {
+      setRecordSaving(false);
+    }
+  };
+
+  const handleDeleteRecord = async (r: Attendance) => {
+    setDeletingRecord(r.id);
+    try {
+      const res = await fetch("/api/records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: r.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      success("Data kehadiran berhasil dihapus");
+      if (selectedEventId) await fetchRecords(selectedEventId);
+    } catch (err: unknown) {
+      error(err instanceof Error ? err.message : "Gagal menghapus data");
+    } finally {
+      setDeletingRecord(null);
+    }
+  };
+
+  const askDeleteRecord = (r: Attendance) => {
+    setConfirmState({
+      title: "Hapus Data Kehadiran",
+      message: (
+        <>
+          Yakin ingin menghapus kehadiran{" "}
+          <span className="font-semibold">{r.employee_name}</span> (ID{" "}
+          {r.employee_id}) pada {r.date}? Data ini akan hilang permanen.
+        </>
+      ),
+      confirmLabel: "Hapus",
+      action: () => handleDeleteRecord(r),
+    });
   };
 
   const formatDuration = (clockIn: string, clockOut: string | null) => {
@@ -886,7 +961,23 @@ export default function DashboardPage() {
                                 </svg>
                               </button>
                               <button
-                                onClick={() => handleDeleteEvent(ev)}
+                                onClick={() =>
+                                  setConfirmState({
+                                    title: "Hapus Event",
+                                    message: (
+                                      <>
+                                        Yakin ingin menghapus event{" "}
+                                        <span className="font-semibold">
+                                          "{ev.name}"
+                                        </span>
+                                        ? Semua kehadiran terkait akan ikut
+                                        terhapus.
+                                      </>
+                                    ),
+                                    confirmLabel: "Hapus",
+                                    action: () => handleDeleteEvent(ev),
+                                  })
+                                }
                                 className="p-2 bg-red-50 hover:bg-red-100 rounded-lg text-sm transition-colors"
                                 title="Hapus event"
                               >
@@ -1069,6 +1160,11 @@ export default function DashboardPage() {
                                   <th className="text-left px-4 py-2 font-semibold text-gray-600">
                                     Tugas
                                   </th>
+                                  {user?.role === "admin" && (
+                                    <th className="text-left px-4 py-2 font-semibold text-gray-600">
+                                      Aksi
+                                    </th>
+                                  )}
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-100">
@@ -1120,6 +1216,29 @@ export default function DashboardPage() {
                                     <td className="px-4 py-2.5 text-gray-600 max-w-xs truncate">
                                       {r.task || "-"}
                                     </td>
+                                    {user?.role === "admin" && (
+                                      <td className="px-4 py-2.5">
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            onClick={() => openEditRecord(r)}
+                                            className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition-colors"
+                                            title="Ubah jam kehadiran"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            onClick={() => askDeleteRecord(r)}
+                                            disabled={deletingRecord === r.id}
+                                            className="px-2.5 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium transition-colors disabled:opacity-40"
+                                            title="Hapus data kehadiran"
+                                          >
+                                            {deletingRecord === r.id
+                                              ? "Menghapus..."
+                                              : "Hapus"}
+                                          </button>
+                                        </div>
+                                      </td>
+                                    )}
                                   </tr>
                                 ))}
                               </tbody>
@@ -1333,7 +1452,23 @@ export default function DashboardPage() {
                             Reset PW
                           </button>
                           <button
-                            onClick={() => handleDeleteUser(u.id)}
+                            onClick={() =>
+                              setConfirmState({
+                                title: "Hapus User",
+                                message: (
+                                  <>
+                                    Yakin ingin menghapus user{" "}
+                                    <span className="font-semibold">
+                                      {u.name}
+                                    </span>{" "}
+                                    ({u.employee_id || u.username})? Semua data
+                                    terkait akan ikut terhapus.
+                                  </>
+                                ),
+                                confirmLabel: "Hapus",
+                                action: () => handleDeleteUser(u.id),
+                              })
+                            }
                             disabled={
                               u.id === user?.id || deletingUser === u.id
                             }
@@ -1437,7 +1572,22 @@ export default function DashboardPage() {
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDeleteDivision(d.id)}
+                              onClick={() =>
+                                setConfirmState({
+                                  title: "Hapus Divisi",
+                                  message: (
+                                    <>
+                                      Yakin ingin menghapus divisi{" "}
+                                      <span className="font-semibold">
+                                        {d.name}
+                                      </span>
+                                      ?
+                                    </>
+                                  ),
+                                  confirmLabel: "Hapus",
+                                  action: () => handleDeleteDivision(d.id),
+                                })
+                              }
                               disabled={d.total_events > 0}
                               className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium disabled:opacity-40 transition-colors"
                               title={d.total_events > 0 ? "Masih dipakai oleh event" : "Hapus divisi"}
@@ -1678,6 +1828,99 @@ export default function DashboardPage() {
                 Tutup
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {confirmState && (
+        <ConfirmModal
+          open
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          loading={deletingUser !== null || deletingRecord !== null}
+          onConfirm={() => {
+            const { action } = confirmState;
+            setConfirmState(null);
+            action();
+          }}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
+
+      {editRecord && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-900">Ubah Jam Kehadiran</h3>
+              <button
+                onClick={() => setEditRecord(null)}
+                className="p-2 text-gray-400 hover:text-gray-600"
+                aria-label="Tutup"
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-gray-700 mb-4">
+              {editRecord.employee_name} (ID {editRecord.employee_id}) —{" "}
+              {editRecord.date}
+            </p>
+            <form onSubmit={handleUpdateRecord} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jam Masuk
+                </label>
+                <input
+                  type="time"
+                  value={editClockIn}
+                  onChange={(e) => setEditClockIn(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jam Pulang
+                </label>
+                <input
+                  type="time"
+                  value={editClockOut}
+                  onChange={(e) => setEditClockOut(e.target.value)}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Kosongkan untuk menandai masih bekerja.
+                </p>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={recordSaving}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors"
+                >
+                  {recordSaving ? "Menyimpan..." : "Simpan Perubahan"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditRecord(null)}
+                  className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold transition-colors"
+                >
+                  Batal
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -2,6 +2,23 @@ import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 
+const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/;
+
+function isAdmin(session: { role: string }) {
+  return session.role === "admin";
+}
+
+async function getRecordForAdmin(sql: ReturnType<typeof getSql>, id: number) {
+  const rows = await sql.query(
+    `SELECT a.id, a.event_id, a.clock_in, a.clock_out, e.user_id AS owner_id
+     FROM attendance a
+     JOIN events e ON e.id = a.event_id
+     WHERE a.id = $1`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
 export async function GET(req: Request) {
   try {
     const session = await getSession();
@@ -60,6 +77,135 @@ export async function GET(req: Request) {
     console.error("Get records error:", error);
     return NextResponse.json(
       { error: "Gagal mengambil data" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: "Hanya admin yang bisa mengubah jam kehadiran" },
+        { status: 403 }
+      );
+    }
+
+    await initDB();
+    const sql = getSql();
+    const { id, clock_in, clock_out } = await req.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID kehadiran wajib diisi" },
+        { status: 400 }
+      );
+    }
+
+    const record = await getRecordForAdmin(sql, id);
+    if (!record) {
+      return NextResponse.json(
+        { error: "Data kehadiran tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    const newClockIn =
+      typeof clock_in === "string" && clock_in.trim() !== "" ? clock_in : null;
+    const newClockOut =
+      typeof clock_out === "string" && clock_out.trim() !== "" ? clock_out : null;
+
+    if (newClockIn !== null && !TIME_RE.test(newClockIn)) {
+      return NextResponse.json(
+        { error: "Format jam masuk tidak valid (HH:mm atau HH:mm:ss)" },
+        { status: 400 }
+      );
+    }
+    if (newClockOut !== null && !TIME_RE.test(newClockOut)) {
+      return NextResponse.json(
+        { error: "Format jam pulang tidak valid (HH:mm atau HH:mm:ss)" },
+        { status: 400 }
+      );
+    }
+
+    const finalIn =
+      newClockIn !== null ? newClockIn : record.clock_in;
+    const finalOut =
+      newClockOut !== null
+        ? newClockOut
+        : record.clock_out || null;
+
+    if (finalOut !== null && finalIn > finalOut) {
+      return NextResponse.json(
+        { error: "Jam pulang tidak boleh lebih awal dari jam masuk" },
+        { status: 400 }
+      );
+    }
+
+    await sql.query(
+      "UPDATE attendance SET clock_in = $1, clock_out = $2 WHERE id = $3",
+      [finalIn, finalOut, id]
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: "Jam kehadiran berhasil diperbarui",
+    });
+  } catch (error) {
+    console.error("Update record error:", error);
+    return NextResponse.json(
+      { error: "Gagal memperbarui data" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!isAdmin(session)) {
+      return NextResponse.json(
+        { error: "Hanya admin yang bisa menghapus data kehadiran" },
+        { status: 403 }
+      );
+    }
+
+    await initDB();
+    const sql = getSql();
+    const { id } = await req.json();
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID kehadiran wajib diisi" },
+        { status: 400 }
+      );
+    }
+
+    const record = await getRecordForAdmin(sql, id);
+    if (!record) {
+      return NextResponse.json(
+        { error: "Data kehadiran tidak ditemukan" },
+        { status: 404 }
+      );
+    }
+
+    await sql.query("DELETE FROM attendance WHERE id = $1", [id]);
+
+    return NextResponse.json({
+      success: true,
+      message: "Data kehadiran berhasil dihapus",
+    });
+  } catch (error) {
+    console.error("Delete record error:", error);
+    return NextResponse.json(
+      { error: "Gagal menghapus data" },
       { status: 500 }
     );
   }
