@@ -7,7 +7,7 @@ export async function POST(req: Request) {
     await initDB();
     const sql = getSql();
     const body = await req.json();
-    const { employee_id, employee_name, division, clock_in, task, token, event_id } =
+    const { employee_id, employee_name, division, clock_in, task, token, event_id, date: clientDate } =
       body;
 
     const session = await getSession();
@@ -58,7 +58,9 @@ export async function POST(req: Request) {
     const effDivision = validToken[0].division_name || division || "";
 
     const now = new Date();
-    const date = now.toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(clientDate || "")
+      ? clientDate
+      : now.toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
 
     const result = await sql.query(
       `INSERT INTO attendance (event_id, user_id, employee_id, employee_name, division, clock_in, task, date)

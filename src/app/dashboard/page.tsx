@@ -92,6 +92,9 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("events");
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [asistenLoading, setAsistenLoading] = useState(false);
+  const [divisionsLoading, setDivisionsLoading] = useState(false);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newEvent, setNewEvent] = useState({
@@ -180,6 +183,7 @@ export default function DashboardPage() {
   }, []);
 
   const fetchAsisten = useCallback(async () => {
+    setAsistenLoading(true);
     try {
       const res = await fetch("/api/asisten");
       const data = await res.json();
@@ -189,26 +193,34 @@ export default function DashboardPage() {
       }
     } catch {
       /* noop */
+    } finally {
+      setAsistenLoading(false);
     }
   }, []);
 
   const fetchUsers = useCallback(async () => {
+    setUsersLoading(true);
     try {
       const res = await fetch("/api/users");
       const data = await res.json();
       if (data.success) setUsers(data.data);
     } catch {
       /* noop */
+    } finally {
+      setUsersLoading(false);
     }
   }, []);
 
   const fetchDivisions = useCallback(async () => {
+    setDivisionsLoading(true);
     try {
       const res = await fetch("/api/divisions");
       const data = await res.json();
       if (data.success) setDivisions(data.data);
     } catch {
       /* noop */
+    } finally {
+      setDivisionsLoading(false);
     }
   }, []);
 
@@ -316,10 +328,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!qrEvent) return;
-    if ((countdowns[qrEvent.id] ?? 0) <= 0) {
-      setQrEvent(null);
+    const fresh = events.find((e) => e.id === qrEvent.id);
+    if (fresh && fresh.token !== qrEvent.token) {
+      setQrEvent(fresh);
     }
-  }, [qrEvent, countdowns]);
+  }, [events, qrEvent]);
 
   const handleAddAsisten = async (userId: number) => {
     try {
@@ -1119,7 +1132,14 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Asisten Saya
               </h2>
-              {assistans.length === 0 ? (
+              {asistenLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="flex flex-col items-center gap-3 text-gray-400">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-sm">Memuat asisten...</p>
+                  </div>
+                </div>
+              ) : assistans.length === 0 ? (
                 <div className="text-center text-gray-400 text-sm py-8">
                   Belum ada asisten. Tambahkan dari daftar yang tersedia.
                 </div>
@@ -1158,7 +1178,14 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Tambah Asisten
               </h2>
-              {candidates.length === 0 ? (
+              {asistenLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="flex flex-col items-center gap-3 text-gray-400">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-sm">Memuat kandidat...</p>
+                  </div>
+                </div>
+              ) : candidates.length === 0 ? (
                 <div className="text-center text-gray-400 text-sm py-8">
                   Tidak ada kandidat. Semua user sudah menjadi asisten Anda.
                 </div>
@@ -1202,6 +1229,14 @@ export default function DashboardPage() {
               </p>
             </div>
             <div className="overflow-x-auto">
+              {usersLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="flex flex-col items-center gap-3 text-gray-400">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-sm">Memuat pengguna...</p>
+                  </div>
+                </div>
+              ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50">
@@ -1304,6 +1339,7 @@ export default function DashboardPage() {
                   ))}
                 </tbody>
               </table>
+              )}
             </div>
           </div>
         )}
@@ -1331,7 +1367,14 @@ export default function DashboardPage() {
                   {divLoading ? "Menyimpan..." : "Tambah"}
                 </button>
               </form>
-              {divisions.length === 0 ? (
+              {divisionsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="flex flex-col items-center gap-3 text-gray-400">
+                    <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-sm">Memuat divisi...</p>
+                  </div>
+                </div>
+              ) : divisions.length === 0 ? (
                 <p className="text-sm text-gray-500 text-center py-4">Belum ada divisi</p>
               ) : (
                 <div className="space-y-2">
@@ -1605,12 +1648,14 @@ export default function DashboardPage() {
                 Scan QR atau masukkan token untuk clock in / clock out. Token
                 berlaku 5 menit.
               </p>
+              <p className="text-xs text-gray-500 mt-1">
+                Token baru otomatis dibuat dalam {countdowns[qrEvent.id] ?? 0} detik
+              </p>
             </div>
             <div className="flex gap-2 mt-5">
               <button
                 onClick={async () => {
                   await handleGenerateToken(qrEvent.id);
-                  setQrEvent(null);
                 }}
                 disabled={genTokenLoading === qrEvent.id}
                 className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold disabled:opacity-50 transition-colors"

@@ -8,6 +8,7 @@ export type Sql = {
 
 let pool: Pool | null = null;
 let sql: Sql | null = null;
+let initPromise: Promise<void> | null = null;
 
 function getSql(): Sql {
   if (sql) return sql;
@@ -21,7 +22,7 @@ function getSql(): Sql {
   pool = new Pool({
     connectionString: url,
     ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-    max: 5,
+    max: 10,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 10000,
   });
@@ -36,6 +37,17 @@ function getSql(): Sql {
 }
 
 export async function initDB() {
+  if (initPromise) return initPromise;
+  initPromise = _initDB();
+  try {
+    await initPromise;
+  } catch (err) {
+    initPromise = null;
+    throw err;
+  }
+}
+
+async function _initDB() {
   const sql = getSql();
   await sql.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -119,19 +131,45 @@ export async function initDB() {
     )
   `);
   await sql.query(`
-    INSERT INTO divisions (name) VALUES
-      ('Acara'),
-      ('Logistik'),
-      ('Dokumentasi'),
-      ('Keamanan'),
-      ('Kebersihan'),
-      ('Konsumsi'),
-      ('Humas'),
-      ('Perlengkapan'),
-      ('Sponsorship'),
-      ('IT')
-    ON CONFLICT (name) DO NOTHING
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
   `);
+  const seeded = await sql.query(
+    "SELECT value FROM meta WHERE key = $1",
+    ["divisions_seeded"]
+  );
+  if (seeded.length === 0) {
+    const existingDivs = await sql.query(
+      "SELECT COUNT(*)::int AS cnt FROM divisions"
+    );
+    if (existingDivs[0]?.cnt && existingDivs[0].cnt > 0) {
+      await sql.query(
+        "INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
+        ["divisions_seeded", "1"]
+      );
+    } else {
+      await sql.query(`
+          INSERT INTO divisions (name) VALUES
+            ('Acara'),
+            ('Logistik'),
+            ('Dokumentasi'),
+            ('Keamanan'),
+            ('Kebersihan'),
+            ('Konsumsi'),
+            ('Humas'),
+            ('Perlengkapan'),
+            ('Sponsorship'),
+            ('IT')
+          ON CONFLICT (name) DO NOTHING
+        `);
+      await sql.query(
+        "INSERT INTO meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
+        ["divisions_seeded", "1"]
+      );
+    }
+  }
   await sql.query(`
     DO $$ BEGIN
       ALTER TABLE events ADD COLUMN IF NOT EXISTS division_id INTEGER REFERENCES divisions(id);
@@ -165,6 +203,13 @@ export async function initDB() {
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(pic_user_id, assistant_user_id)
     )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_tokens_token ON tokens (token)
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_attendance_user_event_date
+    ON attendance (user_id, event_id, date)
   `);
 }
 

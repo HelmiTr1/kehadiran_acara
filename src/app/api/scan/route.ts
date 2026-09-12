@@ -13,6 +13,7 @@ export async function POST(req: Request) {
     const sql = getSql();
     const body = await req.json();
     const raw = String(body?.qr || body?.token || "").trim();
+    const clientDate = String(body?.date || "").trim();
 
     let eventId: number | null = null;
     let token: string;
@@ -68,9 +69,9 @@ export async function POST(req: Request) {
       [session.userId, row.event_id]
     );
 
-    const today = new Date().toLocaleDateString("sv-SE", {
-      timeZone: "Asia/Jakarta",
-    });
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(clientDate)
+      ? clientDate
+      : new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Jakarta" });
     const att = await sql.query(
       `SELECT id, clock_in, clock_out FROM attendance
        WHERE user_id = $1 AND event_id = $2 AND date = $3

@@ -71,7 +71,6 @@ export default function HomePage() {
     const update = () =>
       setCurrentTime(
         new Date().toLocaleTimeString("id-ID", {
-          timeZone: "Asia/Jakarta",
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
@@ -122,10 +121,16 @@ export default function HomePage() {
 
   const getTimeNow = () =>
     new Date().toLocaleTimeString("sv-SE", {
-      timeZone: "Asia/Jakarta",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
+    });
+
+  const getLocalDate = () =>
+    new Date().toLocaleDateString("sv-SE", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     });
 
   const openModal = () => {
@@ -143,7 +148,7 @@ export default function HomePage() {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ qr }),
+        body: JSON.stringify({ qr, date: getLocalDate() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -172,6 +177,7 @@ export default function HomePage() {
           task,
           token: scanned.token,
           event_id: scanned.event.event_id,
+          date: getLocalDate(),
         }),
       });
       const data = await res.json();
@@ -199,6 +205,7 @@ export default function HomePage() {
           task,
           token: scanned.token,
           event_id: scanned.event.event_id,
+          date: getLocalDate(),
         }),
       });
       const data = await res.json();
