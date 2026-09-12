@@ -254,8 +254,8 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 pb-16">
       <header className="bg-white/10 backdrop-blur-sm border-b border-white/10">
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
+        <div className="max-w-lg mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
             <h1 className="text-white font-bold text-lg">Kehadiran Acara</h1>
             {user && (
               <p className="text-blue-200 text-xs">
@@ -384,7 +384,7 @@ export default function HomePage() {
                       className="bg-white rounded-xl shadow-md p-4"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-semibold text-gray-900">{ev.name}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
                             {ev.event_date}
@@ -410,9 +410,9 @@ export default function HomePage() {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center justify-between mt-3 border-t border-gray-100 pt-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mt-3 border-t border-gray-100 pt-3">
                         {ev.sessions.length > 0 ? (
-                          <div className="text-xs text-gray-500 space-y-0.5">
+                          <div className="text-xs text-gray-500 space-y-0.5 min-w-0 flex-1">
                             {ev.sessions.slice(0, 3).map((s) => (
                               <div key={s.attendance_id}>
                                 <span className="font-mono">{s.date.split("-").slice(1).join("-")}</span>{" "}

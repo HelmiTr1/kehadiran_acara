@@ -782,8 +782,8 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-gray-50">
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <h1 className="text-xl font-bold">Dashboard</h1>
                 <span
@@ -820,10 +820,10 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex gap-1 mt-4 border-t border-white/10 pt-3">
+          <div className="flex gap-1 mt-4 border-t border-white/10 pt-3 overflow-x-auto no-scrollbar -mx-4 px-4 sm:mx-0 sm:px-0">
             <button
               onClick={() => setActiveTab("events")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeTab === "events"
                   ? "bg-white text-blue-700"
                   : "text-blue-100 hover:bg-white/10"
@@ -834,7 +834,7 @@ export default function DashboardPage() {
             {(user?.role === "pic" || user?.role === "admin") && (
               <button
                 onClick={() => setActiveTab("asisten")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === "asisten"
                     ? "bg-white text-blue-700"
                     : "text-blue-100 hover:bg-white/10"
@@ -846,7 +846,7 @@ export default function DashboardPage() {
             {(user?.role === "pic" || user?.role === "admin") && (
               <button
                 onClick={() => setActiveTab("rekap")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === "rekap"
                     ? "bg-white text-blue-700"
                     : "text-blue-100 hover:bg-white/10"
@@ -858,7 +858,7 @@ export default function DashboardPage() {
             {user?.role === "admin" && (
               <button
                 onClick={() => setActiveTab("users")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === "users"
                     ? "bg-white text-blue-700"
                     : "text-blue-100 hover:bg-white/10"
@@ -870,7 +870,7 @@ export default function DashboardPage() {
             {user?.role === "admin" && (
               <button
                 onClick={() => setActiveTab("divisi")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === "divisi"
                     ? "bg-white text-blue-700"
                     : "text-blue-100 hover:bg-white/10"
@@ -886,7 +886,7 @@ export default function DashboardPage() {
       <div className="max-w-6xl mx-auto px-4 py-6">
         {activeTab === "events" && (
           <>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
               <h2 className="text-lg font-semibold text-gray-900">Event</h2>
               <button
                 onClick={() => setShowCreateForm(!showCreateForm)}
@@ -1009,8 +1009,8 @@ export default function DashboardPage() {
                     className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
                   >
                     <div className="p-5">
-                      <div className="flex items-start justify-between">
-                        <div>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
                           <h3 className="font-semibold text-gray-900">
                             {ev.name}
                           </h3>
@@ -1029,7 +1029,7 @@ export default function DashboardPage() {
                             </p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                           {(user?.role === "admin" ||
                             user?.id === ev.user_id) && (
                             <>
@@ -1146,7 +1146,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex items-center justify-between">
+                    <div className="border-t border-gray-100 bg-gray-50 px-5 py-3 flex flex-wrap items-center justify-between gap-2">
                       {user?.role !== "asisten" && (
                       <button
                         onClick={() =>
@@ -1340,7 +1340,7 @@ export default function DashboardPage() {
 
         {activeTab === "rekap" && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
               <h2 className="text-lg font-semibold text-gray-900">
                 Total Jam Kerja per User
               </h2>
