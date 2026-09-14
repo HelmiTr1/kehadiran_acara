@@ -78,6 +78,30 @@ export async function POST(req: Request) {
       }
     }
 
+    if (effEmployeeId) {
+      const active = await sql.query(
+        `SELECT a.id, a.clock_in, a.event_id, e.name AS event_name
+         FROM attendance a
+         JOIN events e ON e.id = a.event_id
+         WHERE a.employee_id = $1 AND a.clock_out IS NULL
+         ORDER BY a.id DESC LIMIT 1`,
+        [effEmployeeId]
+      );
+      if (active.length > 0) {
+        const a = active[0];
+        const sameEvent = Number(a.event_id) === Number(event_id);
+        return NextResponse.json(
+          {
+            error: sameEvent
+              ? `Kamu masih clock in di event ini sejak ${a.clock_in} (sesi #${a.id}). Clock out dulu sebelum clock in lagi.`
+              : `Kamu masih bekerja di event "${a.event_name}" sejak ${a.clock_in} (sesi #${a.id}). Clock out dulu sebelum clock in di event lain — tidak bisa dua event sekaligus.`,
+            active_attendance_id: a.id,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const now = new Date();
     const date = /^\d{4}-\d{2}-\d{2}$/.test(clientDate || "")
       ? clientDate

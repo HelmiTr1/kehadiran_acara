@@ -7,6 +7,9 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "kehadiran-acara-secret-change-in-production"
 );
 
+export const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 hari
+export const SESSION_COOKIE_NAME = "session";
+
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
 }
@@ -25,8 +28,18 @@ export type SessionPayload = {
 export async function createSessionToken(payload: SessionPayload) {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("24h")
+    .setExpirationTime("30d")
     .sign(JWT_SECRET);
+}
+
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    maxAge: SESSION_MAX_AGE,
+    path: "/",
+  };
 }
 
 export async function verifySessionToken(token: string) {
@@ -40,7 +53,7 @@ export async function verifySessionToken(token: string) {
 
 export async function getSession() {
   const cookieStore = await cookies();
-  const token = cookieStore.get("session")?.value;
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
   const payload = await verifySessionToken(token);
   if (!payload) return null;

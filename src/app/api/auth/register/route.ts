@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
-import { hashPassword, createSessionToken } from "@/lib/auth";
+import { hashPassword, createSessionToken, sessionCookieOptions, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
@@ -50,13 +50,7 @@ export async function POST(req: Request) {
       message: "Registrasi berhasil",
       role,
     });
-    response.cookies.set("session", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 86400,
-      path: "/",
-    });
+    response.cookies.set(SESSION_COOKIE_NAME, token, sessionCookieOptions());
 
     return response;
   } catch (error) {

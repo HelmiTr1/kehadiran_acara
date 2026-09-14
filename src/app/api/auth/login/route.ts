@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
-import { verifyPassword, createSessionToken } from "@/lib/auth";
+import { verifyPassword, createSessionToken, sessionCookieOptions, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: Request) {
   try {
@@ -49,13 +49,7 @@ export async function POST(req: Request) {
       role: user.role,
       employee_id: user.employee_id || user.username,
     });
-    response.cookies.set("session", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 86400,
-      path: "/",
-    });
+    response.cookies.set(SESSION_COOKIE_NAME, token, sessionCookieOptions());
 
     return response;
   } catch (error) {

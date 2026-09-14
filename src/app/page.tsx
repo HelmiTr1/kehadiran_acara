@@ -60,6 +60,12 @@ export default function HomePage() {
     event: { event_id: number; event_name: string; event_date: string; location: string; division: string };
     attendance: { id: number; clock_in: string; clock_out: string | null } | null;
     token: string;
+    active_attendance: {
+      id: number;
+      clock_in: string;
+      event_id: number;
+      event_name: string;
+    } | null;
   } | null>(null);
   const [division, setDivision] = useState("");
   const [task, setTask] = useState("");
@@ -172,7 +178,7 @@ export default function HomePage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        setScanned({ event: data.event, attendance: data.attendance, token: data.token || qr });
+        setScanned({ event: data.event, attendance: data.attendance, token: data.token || qr, active_attendance: data.active_attendance });
         setDivision(data.event.division || "");
         setTask("");
       } catch (err: unknown) {
@@ -611,6 +617,20 @@ export default function HomePage() {
                   </p>
                 </div>
 
+                {scanned.active_attendance &&
+                  scanned.active_attendance.event_id !==
+                    scanned.event.event_id && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4">
+                      <p className="text-sm text-orange-700 font-medium">
+                        Kamu masih bekerja di event{" "}
+                        <b>{scanned.active_attendance.event_name}</b> sejak{" "}
+                        {scanned.active_attendance.clock_in}. Clock out dulu
+                        sebelum clock in di event lain — tidak bisa dua event
+                        sekaligus.
+                      </p>
+                    </div>
+                  )}
+
                 {scanned.attendance && !scanned.attendance.clock_out ? (
                   <div>
                     <p className="text-sm text-gray-600 mb-1">
@@ -652,7 +672,12 @@ export default function HomePage() {
                     </div>
                     <button
                       onClick={handleClockIn}
-                      disabled={actionLoading}
+                      disabled={
+                        actionLoading ||
+                        (!!scanned.active_attendance &&
+                          scanned.active_attendance.event_id !==
+                            scanned.event.event_id)
+                      }
                       className="w-full py-3 rounded-xl font-semibold text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 transition-all"
                     >
                       {actionLoading ? "Memproses..." : "Clock In Sekarang"}

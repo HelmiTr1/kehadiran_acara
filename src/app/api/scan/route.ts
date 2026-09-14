@@ -75,6 +75,15 @@ export async function POST(req: Request) {
       [session.userId, row.event_id]
     );
 
+    const active = await sql.query(
+      `SELECT a.id, a.clock_in, a.event_id, e.name AS event_name
+       FROM attendance a
+       JOIN events e ON e.id = a.event_id
+       WHERE a.user_id = $1 AND a.clock_out IS NULL
+       ORDER BY a.id DESC LIMIT 1`,
+      [session.userId]
+    );
+
     return NextResponse.json({
       success: true,
       event: {
@@ -86,6 +95,7 @@ export async function POST(req: Request) {
       },
       token,
       attendance: att[0] || null,
+      active_attendance: active[0] || null,
     });
   } catch (error) {
     console.error("Scan error:", error);
