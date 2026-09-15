@@ -717,6 +717,63 @@ export default function DashboardPage() {
     return `${m}:${String(s).padStart(2, "0")}`;
   };
 
+  const handleExportRekap = () => {
+    const rows = summaryData.map((u, i) => ({
+      "No.": i + 1,
+      "ID Karyawan": u.employee_id,
+      Nama: u.employee_name,
+      Divisi: u.division || "-",
+      "Jumlah Event": u.event_count,
+      "Sesi Aktif": u.active_count,
+      "Total Durasi": formatHours(u.total_seconds),
+      "Total (jam desimal)": Number(
+        (u.total_seconds / 3600).toFixed(2)
+      ),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [
+      { wch: 5 },
+      { wch: 15 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 16 },
+    ];
+
+    const detailRows: Record<string, string | number>[] = [];
+    summaryData.forEach((u) => {
+      u.events.forEach((e) => {
+        detailRows.push({
+          "ID Karyawan": u.employee_id,
+          Nama: u.employee_name,
+          Event: e.event_name,
+          "Tanggal Event": e.event_date,
+          "Sesi (masuk)": e.clock_ins,
+          Selesai: e.clock_outs,
+          Durasi: formatHours(e.seconds),
+        });
+      });
+    });
+    const wsDetail = XLSX.utils.json_to_sheet(detailRows);
+    wsDetail["!cols"] = [
+      { wch: 15 },
+      { wch: 22 },
+      { wch: 24 },
+      { wch: 14 },
+      { wch: 12 },
+      { wch: 8 },
+      { wch: 12 },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Rekap Jam");
+    XLSX.utils.book_append_sheet(wb, wsDetail, "Detail per Event");
+    const today = new Date().toLocaleDateString("sv-SE");
+    XLSX.writeFile(wb, `Rekap_Jam_${today}.xlsx`);
+  };
+
   const handleExportExcel = (eventId: number) => {
     const ev = events.find((e) => e.id === eventId);
     if (!ev) return;
@@ -1342,10 +1399,17 @@ export default function DashboardPage() {
               <h2 className="text-lg font-semibold text-gray-900">
                 Total Jam Kerja per User
               </h2>
-              <p className="text-xs text-gray-400">
-                Durasi dijumlah otomatis lintas semua event (termasuk lintas
-                tengah malam).
-              </p>
+              {summaryData.length > 0 && (
+                <button
+                  onClick={handleExportRekap}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 text-sm font-medium rounded-lg transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export Excel
+                </button>
+              )}
             </div>
             {summaryLoading ? (
               <div className="flex items-center justify-center py-12">
