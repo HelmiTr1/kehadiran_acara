@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { parseClockTime } from "@/lib/time";
 import dynamic from "next/dynamic";
 import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
 import { useToast } from "@/lib/useToast";
@@ -145,14 +146,11 @@ export default function HomePage() {
 
   const formatDuration = (clockIn: string, clockOut: string | null) => {
     if (!clockOut) return null;
-    const [inH, inM, inS] = clockIn.split(":").map(Number);
-    const [outH, outM, outS] = clockOut.split(":").map(Number);
-    const crossed =
-      outH * 3600 + outM * 60 + outS < inH * 3600 + inM * 60 + inS;
-    const diff =
-      outH * 3600 + outM * 60 + outS -
-      (inH * 3600 + inM * 60 + inS) +
-      (crossed ? 24 * 3600 : 0);
+    const inSec = parseClockTime(clockIn);
+    const outSec = parseClockTime(clockOut);
+    if (inSec === null || outSec === null) return null;
+    const crossed = outSec < inSec;
+    const diff = outSec - inSec + (crossed ? 24 * 3600 : 0);
     const h = Math.floor(diff / 3600);
     const m = Math.floor((diff % 3600) / 60);
     return `${h}j ${m}m${crossed ? " (+1hr)" : ""}`;

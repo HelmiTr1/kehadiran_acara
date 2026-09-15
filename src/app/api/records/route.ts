@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { parseClockTime, normalizeTime } from "@/lib/time";
 
 const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/;
+
+function isValidTime(v: string | null) {
+  return v !== null && TIME_RE.test(v) && parseClockTime(v) !== null;
+}
 
 function isAdmin(session: { role: string }) {
   return session.role === "admin";
@@ -118,13 +123,13 @@ export async function PATCH(req: Request) {
     const newClockOut =
       typeof clock_out === "string" && clock_out.trim() !== "" ? clock_out : null;
 
-    if (newClockIn !== null && !TIME_RE.test(newClockIn)) {
+    if (newClockIn !== null && !isValidTime(newClockIn)) {
       return NextResponse.json(
         { error: "Format jam masuk tidak valid (HH:mm atau HH:mm:ss)" },
         { status: 400 }
       );
     }
-    if (newClockOut !== null && !TIME_RE.test(newClockOut)) {
+    if (newClockOut !== null && !isValidTime(newClockOut)) {
       return NextResponse.json(
         { error: "Format jam pulang tidak valid (HH:mm atau HH:mm:ss)" },
         { status: 400 }
@@ -132,18 +137,22 @@ export async function PATCH(req: Request) {
     }
 
     const finalIn =
-      newClockIn !== null ? newClockIn : record.clock_in;
+      newClockIn !== null ? normalizeTime(newClockIn) : record.clock_in;
     const finalOut =
       newClockOut !== null
-        ? newClockOut
+        ? normalizeTime(newClockOut)
         : record.clock_out || null;
 
     if (finalOut !== null) {
-      const [inH, inM, inS] = finalIn.split(":").map(Number);
-      const [outH, outM, outS] = finalOut.split(":").map(Number);
-      const clockedIn = inH * 3600 + inM * 60 + (inS || 0);
-      const clockedOut = outH * 3600 + outM * 60 + (outS || 0);
-      const diff = clockedOut - clockedIn + (clockedOut < clockedIn ? 24 * 3600 : 0);
+      const inSec = parseClockTime(finalIn);
+      const outSec = parseClockTime(finalOut);
+      if (inSec === null || outSec === null) {
+        return NextResponse.json(
+          { error: "Format jam tidak valid" },
+          { status: 400 }
+        );
+      }
+      const diff = outSec - inSec + (outSec < inSec ? 24 * 3600 : 0);
       if (diff <= 0 || diff > 24 * 3600) {
         return NextResponse.json(
           { error: "Rentang jam pulang - jam masuk tidak valid (maks 24 jam)" },

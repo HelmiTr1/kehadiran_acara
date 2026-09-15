@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import * as XLSX from "xlsx";
 import { notifyAuthLogout, useOnAuthLogout } from "@/lib/auth-sync";
+import { parseClockTime } from "@/lib/time";
 import { useToast } from "@/lib/useToast";
 import ToastContainer from "@/components/Toast";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -691,14 +692,11 @@ export default function DashboardPage() {
 
   const formatDuration = (clockIn: string, clockOut: string | null) => {
     if (!clockOut) return "-";
-    const [inH, inM, inS] = clockIn.split(":").map(Number);
-    const [outH, outM, outS] = clockOut.split(":").map(Number);
-    const crossed =
-      outH * 3600 + outM * 60 + outS < inH * 3600 + inM * 60 + inS;
-    const diff =
-      outH * 3600 + outM * 60 + outS -
-      (inH * 3600 + inM * 60 + inS) +
-      (crossed ? 24 * 3600 : 0);
+    const inSec = parseClockTime(clockIn);
+    const outSec = parseClockTime(clockOut);
+    if (inSec === null || outSec === null) return "-";
+    const crossed = outSec < inSec;
+    const diff = outSec - inSec + (crossed ? 24 * 3600 : 0);
     const h = Math.floor(diff / 3600);
     const m = Math.floor((diff % 3600) / 60);
     return `${h}j ${m}m${crossed ? " (+1hr)" : ""}`;

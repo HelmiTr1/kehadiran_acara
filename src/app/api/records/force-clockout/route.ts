@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { parseClockTime, normalizeTime } from "@/lib/time";
 
 const TIME_RE = /^\d{2}:\d{2}(:\d{2})?$/;
 
@@ -67,12 +68,13 @@ export async function POST(req: Request) {
       typeof clock_out === "string" && clock_out.trim() !== ""
         ? clock_out
         : new Date().toTimeString().slice(0, 8);
-    if (!TIME_RE.test(finalClockOut)) {
+    if (!TIME_RE.test(finalClockOut) || parseClockTime(finalClockOut) === null) {
       return NextResponse.json(
         { error: "Format jam tidak valid (HH:mm atau HH:mm:ss)" },
         { status: 400 }
       );
     }
+    finalClockOut = normalizeTime(finalClockOut);
 
     await sql.query(
       "UPDATE attendance SET clock_out = $1 WHERE id = $2",

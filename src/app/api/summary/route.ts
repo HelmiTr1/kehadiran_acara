@@ -1,18 +1,7 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-
-function durationSeconds(clockIn: string, clockOut: string | null) {
-  if (!clockOut) return 0;
-  const [inH, inM, inS] = clockIn.split(":").map(Number);
-  const [outH, outM, outS] = clockOut.split(":").map(Number);
-  const clockedIn = inH * 3600 + inM * 60 + (inS || 0);
-  const clockedOut = outH * 3600 + outM * 60 + (outS || 0);
-  const crossed = clockedOut < clockedIn;
-  const diff =
-    clockedOut - clockedIn + (crossed ? 24 * 3600 : 0);
-  return diff > 0 && diff <= 24 * 3600 ? diff : 0;
-}
+import { durationSeconds } from "@/lib/time";
 
 export async function GET(req: Request) {
   try {
