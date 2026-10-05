@@ -40,6 +40,9 @@ export async function GET(req: Request) {
       query += ` AND a.event_id = $${args.length}`;
     }
 
+    // Urutkan per id agar penentuan “sesi pertama tanggal” deterministik
+    query += ` ORDER BY a.id ASC`;
+
     const rows = await sql.query(query, args);
 
     const perUser = new Map<
@@ -48,10 +51,10 @@ export async function GET(req: Request) {
         employee_id: string;
         employee_name: string;
         division: string;
-        events: Map<number, { event_id: number; event_name: string; event_date: string; clock_ins: number; clock_outs: number; seconds: number; work_seconds: number; overtime_seconds: number }>;
-        total_seconds: number;
+        events: Map<number, { event_id: number; event_name: string; event_date: string; clock_ins: number; clock_outs: number; work_seconds: number; overtime_seconds: number }>;
         work_seconds: number;
         overtime_seconds: number;
+        work_dates: Set<string>;
         active_count: number;
       }
     >();
@@ -65,24 +68,23 @@ export async function GET(req: Request) {
           employee_name: r.employee_name,
           division: r.division || "",
           events: new Map(),
-          total_seconds: 0,
           work_seconds: 0,
           overtime_seconds: 0,
+          work_dates: new Set<string>(),
           active_count: 0,
         });
       }
       const userAgg = perUser.get(key)!;
       if (r.division && !userAgg.division) userAgg.division = r.division;
 
-      // Jam kerja dihitung tetap dari ketentuan (bukan dari check-in/out),
-      // lembur dihitung dari check-in/out aktual sesuai hari (weekend/tanggal merah).
+      const dateKey = String(r.att_date || r.event_date || "");
+      // Lembur: selalu dari check-in/out aktual sesuai hari
+      // (Sen–Jumat ≥17.00, Sabtu ≥12.00, Minggu/tanggal merah full).
       const split = splitAttendanceSeconds(
-        r.att_date || r.event_date,
+        dateKey,
         r.clock_in,
         r.clock_out
       );
-      userAgg.total_seconds += split.total_seconds;
-      userAgg.work_seconds += split.work_seconds;
       userAgg.overtime_seconds += split.overtime_seconds;
       if (!r.clock_out) userAgg.active_count += 1;
 
@@ -93,7 +95,6 @@ export async function GET(req: Request) {
           event_date: r.event_date,
           clock_ins: 0,
           clock_outs: 0,
-          seconds: 0,
           work_seconds: 0,
           overtime_seconds: 0,
         });
@@ -101,9 +102,16 @@ export async function GET(req: Request) {
       const evAgg = userAgg.events.get(r.event_id)!;
       evAgg.clock_ins += 1;
       if (r.clock_out) evAgg.clock_outs += 1;
-      evAgg.seconds += split.total_seconds;
-      evAgg.work_seconds += split.work_seconds;
       evAgg.overtime_seconds += split.overtime_seconds;
+
+      // Jam kerja tetap (08.00–17.00 / 08.00–12.00) dihitung 1× per hari
+      // per karyawan — bukan per sesi — supaya tidak menumpuk saat
+      // clock in/out berulang pada tanggal yang sama.
+      if (!userAgg.work_dates.has(dateKey)) {
+        userAgg.work_dates.add(dateKey);
+        userAgg.work_seconds += split.work_seconds;
+        evAgg.work_seconds += split.work_seconds;
+      }
     }
 
     const data = Array.from(perUser.values()).map((u) => ({
@@ -111,7 +119,7 @@ export async function GET(req: Request) {
       employee_name: u.employee_name,
       division: u.division,
       event_count: u.events.size,
-      total_seconds: u.total_seconds,
+      total_seconds: u.work_seconds + u.overtime_seconds,
       work_seconds: u.work_seconds,
       overtime_seconds: u.overtime_seconds,
       active_count: u.active_count,
@@ -121,7 +129,7 @@ export async function GET(req: Request) {
         event_date: e.event_date,
         clock_ins: e.clock_ins,
         clock_outs: e.clock_outs,
-        seconds: e.seconds,
+        seconds: e.work_seconds + e.overtime_seconds,
         work_seconds: e.work_seconds,
         overtime_seconds: e.overtime_seconds,
       })),

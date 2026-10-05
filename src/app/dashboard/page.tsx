@@ -1429,7 +1429,8 @@ export default function DashboardPage() {
             </div>
             <p className="text-xs text-gray-500 mb-4">
               Jam kerja dihitung tetap dari ketentuan jam masuk (Sen–Jumat
-              08.00–17.00, Sabtu 08.00–12.00) — bukan dari check-in/out.
+              08.00–17.00, Sabtu 08.00–12.00) — 1× per hari, tidak menumpuk
+              walau clock in/out berulang, dan bukan dari check-in/out.
               Lembur dihitung dari check-in/out: Sen–Jumat mulai 17.00,
               Sabtu mulai 12.00, Minggu/tanggal merah full lembur.
             </p>
