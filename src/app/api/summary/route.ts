@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { durationSeconds } from "@/lib/time";
+import { splitAttendanceSeconds } from "@/lib/time";
 
 export async function GET(req: Request) {
   try {
@@ -23,7 +23,8 @@ export async function GET(req: Request) {
 
     let query = `
       SELECT a.employee_id, a.employee_name, a.division, a.event_id,
-             a.clock_in, a.clock_out, e.name AS event_name, e.event_date
+             a.clock_in, a.clock_out, a.date AS att_date,
+             e.name AS event_name, e.event_date
       FROM attendance a
       JOIN events e ON e.id = a.event_id
       WHERE 1=1
@@ -47,8 +48,10 @@ export async function GET(req: Request) {
         employee_id: string;
         employee_name: string;
         division: string;
-        events: Map<number, { event_id: number; event_name: string; event_date: string; clock_ins: number; clock_outs: number; seconds: number }>;
+        events: Map<number, { event_id: number; event_name: string; event_date: string; clock_ins: number; clock_outs: number; seconds: number; work_seconds: number; overtime_seconds: number }>;
         total_seconds: number;
+        work_seconds: number;
+        overtime_seconds: number;
         active_count: number;
       }
     >();
@@ -63,14 +66,24 @@ export async function GET(req: Request) {
           division: r.division || "",
           events: new Map(),
           total_seconds: 0,
+          work_seconds: 0,
+          overtime_seconds: 0,
           active_count: 0,
         });
       }
       const userAgg = perUser.get(key)!;
       if (r.division && !userAgg.division) userAgg.division = r.division;
 
-      const seconds = durationSeconds(r.clock_in, r.clock_out);
-      userAgg.total_seconds += seconds;
+      // Jam kerja dihitung tetap dari ketentuan (bukan dari check-in/out),
+      // lembur dihitung dari check-in/out aktual sesuai hari (weekend/tanggal merah).
+      const split = splitAttendanceSeconds(
+        r.att_date || r.event_date,
+        r.clock_in,
+        r.clock_out
+      );
+      userAgg.total_seconds += split.total_seconds;
+      userAgg.work_seconds += split.work_seconds;
+      userAgg.overtime_seconds += split.overtime_seconds;
       if (!r.clock_out) userAgg.active_count += 1;
 
       if (!userAgg.events.has(r.event_id)) {
@@ -81,12 +94,16 @@ export async function GET(req: Request) {
           clock_ins: 0,
           clock_outs: 0,
           seconds: 0,
+          work_seconds: 0,
+          overtime_seconds: 0,
         });
       }
       const evAgg = userAgg.events.get(r.event_id)!;
       evAgg.clock_ins += 1;
       if (r.clock_out) evAgg.clock_outs += 1;
-      evAgg.seconds += seconds;
+      evAgg.seconds += split.total_seconds;
+      evAgg.work_seconds += split.work_seconds;
+      evAgg.overtime_seconds += split.overtime_seconds;
     }
 
     const data = Array.from(perUser.values()).map((u) => ({
@@ -95,6 +112,8 @@ export async function GET(req: Request) {
       division: u.division,
       event_count: u.events.size,
       total_seconds: u.total_seconds,
+      work_seconds: u.work_seconds,
+      overtime_seconds: u.overtime_seconds,
       active_count: u.active_count,
       events: Array.from(u.events.values()).map((e) => ({
         event_id: e.event_id,
@@ -103,6 +122,8 @@ export async function GET(req: Request) {
         clock_ins: e.clock_ins,
         clock_outs: e.clock_outs,
         seconds: e.seconds,
+        work_seconds: e.work_seconds,
+        overtime_seconds: e.overtime_seconds,
       })),
     }));
 

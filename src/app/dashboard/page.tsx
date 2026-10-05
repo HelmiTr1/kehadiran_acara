@@ -87,6 +87,8 @@ interface SummaryUser {
   division: string;
   event_count: number;
   total_seconds: number;
+  work_seconds: number;
+  overtime_seconds: number;
   active_count: number;
   events: {
     event_id: number;
@@ -95,6 +97,8 @@ interface SummaryUser {
     clock_ins: number;
     clock_outs: number;
     seconds: number;
+    work_seconds: number;
+    overtime_seconds: number;
   }[];
 }
 
@@ -725,10 +729,14 @@ export default function DashboardPage() {
       Divisi: u.division || "-",
       "Jumlah Event": u.event_count,
       "Sesi Aktif": u.active_count,
+      "Jam Kerja": formatHours(u.work_seconds),
+      Lembur: formatHours(u.overtime_seconds),
       "Total Durasi": formatHours(u.total_seconds),
       "Total (jam desimal)": Number(
         (u.total_seconds / 3600).toFixed(2)
       ),
+      "Jam Kerja (jam desimal)": Number((u.work_seconds / 3600).toFixed(2)),
+      "Lembur (jam desimal)": Number((u.overtime_seconds / 3600).toFixed(2)),
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = [
@@ -738,8 +746,12 @@ export default function DashboardPage() {
       { wch: 16 },
       { wch: 12 },
       { wch: 10 },
+      { wch: 12 },
+      { wch: 10 },
       { wch: 14 },
       { wch: 16 },
+      { wch: 20 },
+      { wch: 18 },
     ];
 
     const detailRows: Record<string, string | number>[] = [];
@@ -752,6 +764,8 @@ export default function DashboardPage() {
           "Tanggal Event": e.event_date,
           "Sesi (masuk)": e.clock_ins,
           Selesai: e.clock_outs,
+          "Jam Kerja": formatHours(e.work_seconds),
+          Lembur: formatHours(e.overtime_seconds),
           Durasi: formatHours(e.seconds),
         });
       });
@@ -764,6 +778,8 @@ export default function DashboardPage() {
       { wch: 14 },
       { wch: 12 },
       { wch: 8 },
+      { wch: 12 },
+      { wch: 10 },
       { wch: 12 },
     ];
 
@@ -1411,6 +1427,12 @@ export default function DashboardPage() {
                 </button>
               )}
             </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Jam kerja dihitung tetap dari ketentuan jam masuk (Sen–Jumat
+              08.00–17.00, Sabtu 08.00–12.00) — bukan dari check-in/out.
+              Lembur dihitung dari check-in/out: Sen–Jumat mulai 17.00,
+              Sabtu mulai 12.00, Minggu/tanggal merah full lembur.
+            </p>
             {summaryLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="flex flex-col items-center gap-3 text-gray-400">
@@ -1432,6 +1454,12 @@ export default function DashboardPage() {
                       <th className="text-left px-4 py-2 font-semibold text-gray-600">Nama</th>
                       <th className="text-left px-4 py-2 font-semibold text-gray-600">Divisi</th>
                       <th className="text-left px-4 py-2 font-semibold text-gray-600">Event</th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600" title="Dihitung tetap dari ketentuan jam masuk 08.00 — bukan dari check-in/out">
+                        Jam Kerja
+                      </th>
+                      <th className="text-left px-4 py-2 font-semibold text-gray-600" title="Dihitung dari check-in/out: Sen–Jumat ≥17.00, Sabtu ≥12.00, Minggu/tanggal merah full">
+                        Lembur
+                      </th>
                       <th className="text-left px-4 py-2 font-semibold text-gray-600">Total Jam</th>
                       {user?.role === "admin" && (
                         <th className="text-left px-4 py-2 font-semibold text-gray-600">Rincian</th>
@@ -1462,6 +1490,12 @@ export default function DashboardPage() {
                           <td className="px-4 py-2.5 text-gray-600">
                             {u.event_count} event
                           </td>
+                          <td className="px-4 py-2.5 text-gray-700">
+                            {formatHours(u.work_seconds)}
+                          </td>
+                          <td className="px-4 py-2.5 text-orange-600">
+                            {formatHours(u.overtime_seconds)}
+                          </td>
                           <td className="px-4 py-2.5 font-semibold text-gray-900">
                             {formatHours(u.total_seconds)}
                           </td>
@@ -1484,7 +1518,7 @@ export default function DashboardPage() {
                         </tr>
                         {expandedUser === u.employee_id && user?.role === "admin" && (
                           <tr key={`${u.employee_id}-detail`} className="bg-gray-50">
-                            <td colSpan={7} className="px-4 py-3">
+                            <td colSpan={9} className="px-4 py-3">
                               <div className="space-y-1.5">
                                 {u.events.map((e) => (
                                   <div
@@ -1500,7 +1534,15 @@ export default function DashboardPage() {
                                       </span>
                                     </div>
                                     <div className="text-gray-600">
-                                      {e.clock_ins}x ({e.clock_outs} selesai) —{" "}
+                                      {e.clock_ins}x ({e.clock_outs} selesai) — Kerja{" "}
+                                      <b className="text-gray-900">
+                                        {formatHours(e.work_seconds)}
+                                      </b>
+                                      , Lembur{" "}
+                                      <b className="text-orange-600">
+                                        {formatHours(e.overtime_seconds)}
+                                      </b>
+                                      , Total{" "}
                                       <b className="text-gray-900">
                                         {formatHours(e.seconds)}
                                       </b>
