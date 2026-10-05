@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import getSql, { initDB } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { splitAttendanceSeconds } from "@/lib/time";
+import { splitSessionByDay, workSecondsForDate } from "@/lib/time";
 
 export async function GET(req: Request) {
   try {
@@ -54,7 +54,8 @@ export async function GET(req: Request) {
         events: Map<number, { event_id: number; event_name: string; event_date: string; clock_ins: number; clock_outs: number; work_seconds: number; overtime_seconds: number }>;
         work_seconds: number;
         overtime_seconds: number;
-        work_dates: Set<string>;
+        /** Tanggal → jam kerja yang sudah terpakai (dibatasi window hari). */
+        work_dates: Map<string, number>;
         active_count: number;
       }
     >();
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
           events: new Map(),
           work_seconds: 0,
           overtime_seconds: 0,
-          work_dates: new Set<string>(),
+          work_dates: new Map<string, number>(),
           active_count: 0,
         });
       }
@@ -78,14 +79,10 @@ export async function GET(req: Request) {
       if (r.division && !userAgg.division) userAgg.division = r.division;
 
       const dateKey = String(r.att_date || r.event_date || "");
-      // Lembur: selalu dari check-in/out aktual sesuai hari
-      // (Sen–Jumat ≥17.00, Sabtu ≥12.00, Minggu/tanggal merah full).
-      const split = splitAttendanceSeconds(
-        dateKey,
-        r.clock_in,
-        r.clock_out
-      );
-      userAgg.overtime_seconds += split.overtime_seconds;
+      // Sesi dipecah per tanggal: jam di dalam window kerja (Sen–Jumat
+      // 08.00–17.00, Sabtu 08.00–12.00) dihitung kerja, sisanya lembur.
+      // Sesi lewat tengah malam memakai aturan tanggal masing-masing.
+      const parts = splitSessionByDay(dateKey, r.clock_in, r.clock_out);
       if (!r.clock_out) userAgg.active_count += 1;
 
       if (!userAgg.events.has(r.event_id)) {
@@ -102,15 +99,23 @@ export async function GET(req: Request) {
       const evAgg = userAgg.events.get(r.event_id)!;
       evAgg.clock_ins += 1;
       if (r.clock_out) evAgg.clock_outs += 1;
-      evAgg.overtime_seconds += split.overtime_seconds;
 
-      // Jam kerja tetap (08.00–17.00 / 08.00–12.00) dihitung 1× per hari
-      // per karyawan — bukan per sesi — supaya tidak menumpuk saat
-      // clock in/out berulang pada tanggal yang sama.
-      if (!userAgg.work_dates.has(dateKey)) {
-        userAgg.work_dates.add(dateKey);
-        userAgg.work_seconds += split.work_seconds;
-        evAgg.work_seconds += split.work_seconds;
+      for (const part of parts) {
+        // Lembur selalu utuh per tanggal — boleh menumpuk antar sesi.
+        userAgg.overtime_seconds += part.overtime_seconds;
+        evAgg.overtime_seconds += part.overtime_seconds;
+
+        // Jam kerja dibatasi 1× window kerja per tanggal per karyawan.
+        // Kalau 1 hari ada 2 sesi (atau 2 event), jam kerja yang tidak
+        // termuat dalam window hari itu otomatis jatuh ke lembur.
+        const used = userAgg.work_dates.get(part.date) ?? 0;
+        const room = workSecondsForDate(part.date) - used;
+        const work = Math.min(part.work_seconds, Math.max(0, room));
+        if (work > 0) {
+          userAgg.work_dates.set(part.date, used + work);
+          userAgg.work_seconds += work;
+          evAgg.work_seconds += work;
+        }
       }
     }
 

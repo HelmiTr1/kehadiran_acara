@@ -30,12 +30,11 @@ export function getDayKind(date: string | null | undefined): DayKind {
 }
 
 /**
- * Jam kerja tidak dihitung dari check-in/check-out (tetap sesuai ketentuan):
+ * Lama maksimum window kerja hari itu (detik):
  * weekday 08.00–17.00 (9 jam), Sabtu 08.00–12.00 (4 jam), libur 0.
  */
 export function workSecondsForDay(kind: DayKind): number {
   if (kind === "holiday") return 0;
-  // 08.00 (jam masuk tetap) sampai batas lembur hari itu
   const end =
     kind === "saturday"
       ? SATURDAY_OVERTIME_START_SEC
@@ -43,29 +42,93 @@ export function workSecondsForDay(kind: DayKind): number {
   return end - WORK_START_SEC;
 }
 
+/** Awal window kerja (detik dari tengah malam) untuk jenis hari. */
+function workWindowStartSec(kind: DayKind): number {
+  return kind === "holiday" ? 0 : WORK_START_SEC;
+}
+
+/** Panjang maksimum window kerja (detik) pada tanggal tertentu. */
+export function workSecondsForDate(date: string | null | undefined): number {
+  return workSecondsForDay(getDayKind(date));
+}
+
+function normalizeDate(date: string | null | undefined): string {
+  const d = (date || "").trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : "";
+}
+
+function addDays(date: string, days: number): string {
+  const ms = Date.parse(`${date}T00:00:00Z`);
+  if (Number.isNaN(ms)) return date;
+  return new Date(ms + days * DAY_SECONDS * 1000).toISOString().slice(0, 10);
+}
+
+/** Batas tengah malam berikutnya dari posisi absolut `cursor` (detik). */
+function nextMidnight(cursor: number): number {
+  return (Math.floor(cursor / DAY_SECONDS) + 1) * DAY_SECONDS;
+}
+
+/** Bagian satu sesi yang jatuh pada satu tanggal kalender. */
+export type DaySplit = {
+  date: string;
+  work_seconds: number;
+  overtime_seconds: number;
+};
+
 /**
- * Lembur dihitung dari check-in/check-out aktual:
- * - weekday  → dari max(check-in, 17.00) sampai check-out
- * - Sabtu    → dari max(check-in, 12.00) sampai check-out
- * - libur    → seluruh durasi check-in → check-out (full lembur)
- * Check-out belum ada → 0 (belum bisa dihitung).
+ * Pecah 1 sesi check-in → check-out menjadi jam kerja + lembur per tanggal.
+ *
+ * Sesi dipecah pada setiap pergantian tanggal, lalu tiap bagian dibandingkan
+ * dengan window kerja hari itu:
+ * - weekday 08.00–17.00 → jam di dalam window = kerja, sisanya = lembur
+ * - Sabtu    08.00–12.00 → jam di dalam window = kerja, sisanya = lembur
+ * - libur / Minggu      → seluruh durasi = lembur
+ *
+ * Jadi 1 hari dengan 2 sesi (mis. 08.00–12.00 dan 13.00–19.00) dijumlahkan
+ * penuh: 8 jam kerja + 2 jam lembur. Sesi yang lewat tengah malam memakai
+ * aturan tanggal masing-masing, bukan aturan tanggal check-in.
+ * Check-out belum ada → array kosong (belum bisa dihitung).
  */
-export function overtimeSecondsForDay(
-  kind: DayKind,
+export function splitSessionByDay(
+  date: string | null | undefined,
   clockIn: string | null | undefined,
   clockOut: string | null | undefined
-): number {
+): DaySplit[] {
   const inSec = parseClockTime(clockIn);
   const outSec = parseClockTime(clockOut);
-  if (inSec === null || outSec === null) return 0;
-  let end = outSec;
-  if (end < inSec) end += DAY_SECONDS; // lewat tengah malam
-  if (kind === "holiday") return end - inSec;
-  const threshold =
-    kind === "saturday"
-      ? SATURDAY_OVERTIME_START_SEC
-      : WEEKDAY_OVERTIME_START_SEC;
-  return Math.max(0, end - Math.max(inSec, threshold));
+  if (inSec === null || outSec === null) return [];
+  const end = outSec < inSec ? outSec + DAY_SECONDS : outSec;
+  const duration = end - inSec;
+  if (duration <= 0 || duration > DAY_SECONDS) return [];
+
+  const base = normalizeDate(date);
+  const result: DaySplit[] = [];
+  let cursor = inSec;
+  let day = base;
+
+  // Durasi dibatasi 24 jam → paling banyak dua iterasi.
+  for (let i = 0; i < 3 && cursor < end; i++) {
+    const kind = getDayKind(day);
+    const segEnd = Math.min(end, nextMidnight(cursor));
+    const segSeconds = segEnd - cursor;
+
+    const winStart = workWindowStartSec(kind);
+    const winEnd = winStart + workSecondsForDay(kind);
+    const work = Math.max(
+      0,
+      Math.min(segEnd, winEnd) - Math.max(cursor, winStart)
+    );
+
+    result.push({
+      date: day,
+      work_seconds: work,
+      overtime_seconds: segSeconds - work,
+    });
+
+    cursor = segEnd;
+    day = addDays(day, 1);
+  }
+  return result;
 }
 
 export type AttendanceSplit = {
@@ -74,15 +137,15 @@ export type AttendanceSplit = {
   total_seconds: number;
 };
 
-/** Pemisahan 1 record kehadiran menjadi jam kerja + lembur. */
+/** Pemisahan 1 record kehadiran menjadi jam kerja + lembur (semua tanggal). */
 export function splitAttendanceSeconds(
   date: string | null | undefined,
   clockIn: string | null | undefined,
   clockOut: string | null | undefined
 ): AttendanceSplit {
-  const kind = getDayKind(date);
-  const work_seconds = workSecondsForDay(kind);
-  const overtime_seconds = overtimeSecondsForDay(kind, clockIn, clockOut);
+  const parts = splitSessionByDay(date, clockIn, clockOut);
+  const work_seconds = parts.reduce((sum, p) => sum + p.work_seconds, 0);
+  const overtime_seconds = parts.reduce((sum, p) => sum + p.overtime_seconds, 0);
   return {
     work_seconds,
     overtime_seconds,
